@@ -138,21 +138,48 @@
       .titlebar .win-btn:disabled { opacity: 0.35; }
       body.inactive .titlebar { opacity: 0.6; }
 
-      /* ---- launcher content (dsh look: no card containers) ---- */
+      /* ---- launcher content (dsh look: no card containers) ----
+         Fixed head (hero + local instance) above; only the remote list
+         scrolls — the page is a flex column and the remote section owns the
+         remaining height. */
       .content {
         flex: 1;
         min-height: 0;
-        overflow: auto;
+        overflow: hidden;
         display: flex;
         justify-content: center;
-        padding: 56px 24px 40px;
+        padding: 40px 24px 0;
       }
-      .page { width: min(520px, 100%); }
-      .hero { text-align: center; margin-bottom: 40px; }
+      .page {
+        width: min(560px, 100%);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .hero { text-align: center; margin-bottom: 28px; flex: none; }
       .hero .logo { width: 40px; height: 30px; color: var(--shell-fg); }
       .hero h1 { font-size: 20px; font-weight: 500; margin: 14px 0 6px; color: var(--shell-fg); }
       .hero .sub { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0; }
-      .section { padding: 20px 0; border-top: 1px solid var(--shell-border); }
+      .section { padding: 16px 0; border-top: 1px solid var(--shell-border); flex: none; }
+      .section.remote {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        padding-bottom: 24px;
+      }
+      .section.remote > .row-title,
+      .section.remote > .meta,
+      .section.remote > .search-wrap,
+      .section.remote > .remote-form { flex: none; }
+      .remote-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        margin: 0 -24px;
+        padding: 0 24px;
+      }
       .section .row-title {
         display: flex;
         align-items: center;
@@ -356,11 +383,11 @@
           <pre class="log" id="log" hidden></pre>
         </section>
 
-        <section class="section">
+        <section class="section remote">
           <div class="row-title">远程节点 <button id="remote-add" class="btn sm outline">添加实例</button></div>
           <p class="meta">连接远程 dsh（经网关，访问密钥注入）；可添加、保存、切换多个节点。</p>
           <input id="remote-search" class="field" placeholder="搜索实例（名称 / 地址）" spellcheck="false" style="margin-bottom:4px" />
-          <div id="remote-list"></div>
+          <div id="remote-list" class="remote-list"></div>
           <div id="remote-form" class="remote-form" hidden>
             <div class="field-row">
               <input id="rf-name" class="field" placeholder="名称，如 书房网关" spellcheck="false" />
