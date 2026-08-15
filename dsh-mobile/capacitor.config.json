@@ -1,0 +1,11 @@
+{
+  "appId": "com.dshapp.mobile",
+  "appName": "DeepSeek Harness",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
