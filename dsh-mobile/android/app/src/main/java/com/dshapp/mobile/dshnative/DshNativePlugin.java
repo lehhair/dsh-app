@@ -39,6 +39,7 @@ public class DshNativePlugin extends Plugin {
         String cookieName = call.getString("cookieName");
         String cookieValue = call.getString("cookieValue");
         String injectScript = call.getString("injectScript");
+        final String authKey = call.getString("key");
         if (url == null) {
             call.reject("url is required");
             return;
@@ -80,13 +81,28 @@ public class DshNativePlugin extends Plugin {
                 }
             }, "DshNativeBridge");
 
+            // Push the page down below the (transparent, edge-to-edge)
+            // status bar so dsh's own content is never covered by it.
+            androidx.core.view.OnApplyWindowInsetsListener insetsListener = (view, insets) -> {
+                androidx.core.graphics.Insets bars = insets.getInsets(
+                    androidx.core.view.WindowInsetsCompat.Type.systemBars());
+                view.setPadding(0, bars.top, 0, bars.bottom);
+                return insets;
+            };
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(wv, insetsListener);
+
             // Inject the gateway session cookie before any request fires.
-            if (cookieName != null && cookieValue != null) {
+            // SameSite=Strict is fine here: the WebView loads the gateway's
+            // own origin, so the cookie is first-party to it.
+            if (cookieName != null && cookieValue != null && !cookieValue.isEmpty()) {
                 CookieManager cm = CookieManager.getInstance();
                 cm.setAcceptCookie(true);
-                cm.setCookie(url, cookieName + "=" + cookieValue + "; Path=/");
+                cm.setCookie(url, cookieName + "=" + cookieValue + "; Path=/; Max-Age=604800");
+                cm.flush();
             }
 
+            // The gateway accepts Bearer <key> directly (verified: 200), a
+            // belt-and-braces against any SameSite edge case on the cookie.
             wv.setWebViewClient(new WebViewClient() {
                 @Override
                 public void onPageFinished(WebView view, String pageUrl) {
@@ -112,7 +128,13 @@ public class DshNativePlugin extends Plugin {
                     ViewGroup.LayoutParams.MATCH_PARENT);
             ((ViewGroup) activity.getWindow().getDecorView()).addView(wv, params);
             webView = wv;
-            wv.loadUrl(url);
+            if (authKey != null && !authKey.isEmpty()) {
+                java.util.Map<String, String> headers = new java.util.HashMap<>();
+                headers.put("Authorization", "Bearer " + authKey);
+                wv.loadUrl(url, headers);
+            } else {
+                wv.loadUrl(url);
+            }
             call.resolve();
         });
     }

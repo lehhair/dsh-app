@@ -9,8 +9,8 @@
     "allowMixedContent": true
   },
   "plugins": {
-    "StatusBar": {
-      "overlaysWebView": true,
+    "SystemBars": {
+      "insetsHandling": "css",
       "style": "DEFAULT"
     }
   }

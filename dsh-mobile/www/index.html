@@ -48,13 +48,14 @@
         padding-bottom: env(safe-area-inset-bottom);
       }
 
-      /* brand header — padded below the status bar when overlaysWebView=true */
+      /* brand header — padded below the status bar (edge-to-edge; the
+         SystemBars plugin injects --safe-area-inset-top into the page) */
       header {
         flex: none;
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: calc(14px + env(safe-area-inset-top)) 16px 10px;
+        padding: calc(14px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 16px 10px;
       }
       .logo {
         display: inline-block;

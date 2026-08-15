@@ -102,10 +102,13 @@
       const injectScript = document.getElementById('inject-back-js')?.textContent
 
       // 3. Open the gateway with the cookie pre-injected — no login flash.
+      //    Also pass the key so the native side can add an Authorization
+      //    header on the initial load (gateway accepts Bearer directly).
       const openResult = await DshNative.open({
         url: node.url,
         cookieName: 'dsh_gateway_key',
         cookieValue: cookie ?? '',
+        key: node.key ?? '',
         injectScript: injectScript ?? '',
       }).catch((e) => ({ error: String(e) }))
       console.log('[dsh-mobile] open', openResult?.error ? `failed: ${openResult.error}` : 'ok')
@@ -113,35 +116,7 @@
     },
   }
 
-  // ---- status bar: immersive + theme-following ----
-  // Capacitor injects the bridge after the page script runs; wait for the
-  // ready event explicitly instead of racing DOMContentLoaded.
-  function initStatusBar(sb) {
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    sb.setOverlaysWebView({ overlay: true }).catch(() => {})
-    sb.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(() => {})
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-      sb.setStyle({ style: e.matches ? 'DARK' : 'LIGHT' }).catch(() => {})
-    })
-    console.log('[dsh-mobile] status bar', dark ? 'DARK' : 'LIGHT')
-  }
-
-  function whenCapacitorReady(fn) {
-    const tryRun = () => {
-      const sb = window.Capacitor?.Plugins?.StatusBar
-      if (sb) { fn(sb); return true }
-      return false
-    }
-    if (tryRun()) return
-    if (window.Capacitor?.addListener) {
-      window.Capacitor.addListener('capacitorReady', () => tryRun())
-    }
-    // Fallback poll: some builds fire ready before plugins resolve.
-    let attempts = 0
-    const timer = setInterval(() => {
-      if (tryRun() || ++attempts > 20) clearInterval(timer)
-    }, 250)
-  }
-
-  whenCapacitorReady(initStatusBar)
+  // ---- status bar: handled natively by Capacitor's SystemBars plugin
+  // (edge-to-edge + --safe-area-inset-* CSS variables from config), so the
+  // launcher only needs the CSS padding above. No JS calls required. ----
 })()
