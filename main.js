@@ -224,9 +224,13 @@ async function connectRemote(rawUrl, rawKey) {
   try {
     const session = await ensureGatewaySession(url, key)
     if (!session.ok) return session
-    const view = showView('adhoc')
+    const view = viewFor('adhoc')
     await setViewCookie(view, url, session.cookie)
-    if (!view.webContents.getURL().startsWith(url)) await view.webContents.loadURL(url)
+    if (!view.webContents.getURL().startsWith(url)) {
+      await view.webContents.loadURL(url)
+      await waitForFirstPaint(view.webContents)
+    }
+    showView('adhoc')
     shellWindow?.webContents.send('connection:changed', { name: new URL(url).host })
     return { ok: true, url }
   } catch (error) {
@@ -251,10 +255,14 @@ async function connectById(id) {
       console.log(`[connect] session failed: ${session.error}`)
       return session
     }
-    const view = showView(id)
+    const view = viewFor(id)
     await setViewCookie(view, instance.url, session.cookie)
     const alreadyLoaded = view.webContents.getURL().startsWith(instance.url)
-    if (!alreadyLoaded) await view.webContents.loadURL(instance.url)
+    if (!alreadyLoaded) {
+      await view.webContents.loadURL(instance.url)
+      await waitForFirstPaint(view.webContents)
+    }
+    showView(id)
     shellWindow?.webContents.send('connection:changed', { name: instance.name })
     console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
     return { ok: true, url: instance.url, cached: alreadyLoaded }
@@ -363,6 +371,20 @@ function hideAllViews() {
   activeViewId = null
 }
 
+/** Resolve once the webContents has painted a frame (first-frame gate so a
+ * freshly loaded page never flashes white when its view is revealed). */
+function waitForFirstPaint(webContents, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const done = () => {
+      webContents.removeListener('paint', done)
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(done, timeoutMs)
+    webContents.once('paint', done)
+  })
+}
+
 function createWindow() {
   shellWindow = new BrowserWindow({
     width: 1440,
@@ -425,10 +447,12 @@ ipcMain.handle('local:logs', () => local?.logs ?? [])
 // Reusing the same view without reload when it already shows that target.
 ipcMain.handle('shell:connect', async (_event, url) => {
   const target = String(url)
-  const view = showView('local')
+  const view = viewFor('local')
   if (!view.webContents.getURL().startsWith(target)) {
     await view.webContents.loadURL(target)
+    await waitForFirstPaint(view.webContents)
   }
+  showView('local')
   shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
   return { ok: true }
 })
