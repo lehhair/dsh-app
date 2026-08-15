@@ -203,8 +203,10 @@
         font-size: 13px;
         outline: none;
         min-width: 180px;
-        flex: 1 1 200px;
       }
+      /* elasticity only inside a form row; standalone fields (search) stay
+         natural height even inside a flex column */
+      .field-row > .field { flex: 1 1 200px; }
       .field:focus { border-color: var(--shell-brand); }
       .field::placeholder { color: var(--shell-fg-tertiary); }
 
