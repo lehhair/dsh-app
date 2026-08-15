@@ -84,11 +84,17 @@
 
       // 1. Gateway session: same login as the desktop shell (POST
       //    /_gateway/login), performed natively so there is no CORS wall.
+      //    A failed login never blocks opening — the page's own login screen
+      //    remains as fallback.
       let cookie = null
       if (node.key) {
-        const login = await DshNative.login({ url: node.url, key: node.key })
-        if (login?.ok && login.cookie) cookie = login.cookie
-        console.log('[dsh-mobile] login', login?.ok ? 'ok' : 'failed')
+        try {
+          const login = await DshNative.login({ url: node.url, key: node.key })
+          if (login?.ok && login.cookie) cookie = login.cookie
+          console.log('[dsh-mobile] login', login?.ok ? 'ok' : `failed: ${login?.error ?? '?'}`)
+        } catch (e) {
+          console.log('[dsh-mobile] login threw', String(e))
+        }
       }
 
       // 2. Inject the "回到启动页" button script (desktop-proven). The page
@@ -102,7 +108,7 @@
         cookieValue: cookie ?? '',
         injectScript: injectScript ?? '',
       }).catch((e) => ({ error: String(e) }))
-      console.log('[dsh-mobile] open', openResult)
+      console.log('[dsh-mobile] open', openResult?.error ? `failed: ${openResult.error}` : 'ok')
       return { ok: !openResult?.error, authed: Boolean(cookie) }
     },
   }

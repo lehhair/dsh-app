@@ -29,6 +29,11 @@ public class MainActivity extends BridgeActivity {
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         boolean dark = nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
 
+        // The status bar itself must be transparent so the page background
+        // shows through (that is the "fused" look). Icon color follows the
+        // system dark mode: light icons on dark, dark icons on light.
+        window.setStatusBarColor(android.graphics.Color.TRANSPARENT);
+
         if (Build.VERSION.SDK_INT >= 30) {
             WindowInsetsController controller = decor.getWindowInsetsController();
             if (controller != null) {
@@ -38,7 +43,9 @@ public class MainActivity extends BridgeActivity {
                 controller.setSystemBarsBehavior(
                         WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
-        } else if (Build.VERSION.SDK_INT >= 23) {
+            decor.setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        } else {
             decor.setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                     | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN

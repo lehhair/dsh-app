@@ -145,15 +145,16 @@ public class DshNativePlugin extends Plugin {
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
                 conn.setDoOutput(true);
-                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                // Do NOT follow the 302: the session cookie lives on the
+                // redirect response itself (same as the desktop shell reads
+                // res.headers['set-cookie'] on the 302).
+                conn.setInstanceFollowRedirects(false);
                 String body = "key=" + java.net.URLEncoder.encode(key, "UTF-8") + "&next=/";
                 conn.getOutputStream().write(body.getBytes("UTF-8"));
                 conn.connect();
-                // Drain the body so the connection is usable.
-                java.io.InputStream in = conn.getInputStream();
-                byte[] buf = new byte[4096];
-                while (in.read(buf) != -1) { /* drain */ }
-                in.close();
+                int code = conn.getResponseCode();
                 java.util.List<String> cookies = conn.getHeaderFields().get("Set-Cookie");
                 String cookie = null;
                 if (cookies != null) {
@@ -165,16 +166,23 @@ public class DshNativePlugin extends Plugin {
                         }
                     }
                 }
+                // Drain whatever body came back so the connection can close.
+                java.io.InputStream in = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                if (in != null) {
+                    byte[] buf = new byte[4096];
+                    while (in.read(buf) != -1) { /* drain */ }
+                    in.close();
+                }
+                conn.disconnect();
                 JSObject result = new JSObject();
                 if (cookie != null) {
                     result.put("ok", true);
                     result.put("cookie", cookie);
                 } else {
                     result.put("ok", false);
-                    result.put("error", "登录未返回会话 Cookie（检查访问密钥）");
+                    result.put("error", "登录未返回会话 Cookie（检查访问密钥，HTTP " + code + "）");
                 }
                 call.resolve(result);
-                conn.disconnect();
             } catch (Exception e) {
                 call.reject("无法连接网关：" + e.getMessage());
             }
