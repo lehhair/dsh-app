@@ -48,6 +48,8 @@ if (isLauncher) {
       current: () => ipcRenderer.invoke('settings:current'),
       getLoginItem: () => ipcRenderer.invoke('settings:get-login-item'),
       setLoginItem: (enabled) => ipcRenderer.invoke('settings:set-login-item', enabled),
+      getRestore: () => ipcRenderer.invoke('settings:get-restore'),
+      setRestore: (enabled) => ipcRenderer.invoke('settings:set-restore', enabled),
     },
     // live theme sync from the connected dsh page (title-bar fusion)
     onThemeSync: (callback) => {

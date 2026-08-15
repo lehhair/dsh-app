@@ -227,10 +227,14 @@
         <div class="group">
           <div class="group-title">行为</div>
           <div class="behavior">
+            <span class="label">启动时恢复上次连接</span>
+            <button id="restore" class="toggle" role="switch" aria-checked="false" title="下次启动自动打开上次连接的节点"></button>
+          </div>
+          <div class="behavior" style="padding-top:0">
             <span class="label">开机自启</span>
             <button id="login-item" class="toggle" role="switch" aria-checked="false" title="开机时自动启动 dsh app"></button>
           </div>
-          <p class="hint">开机时自动启动本应用。</p>
+          <p class="hint">恢复上次连接：启动应用时自动进入上次使用的节点。</p>
         </div>
       </div>
     </div>
@@ -307,6 +311,21 @@
         loginItemBtn.setAttribute('aria-checked', String(on))
       }
 
+      const restoreBtn = document.getElementById('restore')
+
+      async function renderRestore() {
+        const on = await window.dshShell.settings.getRestore()
+        restoreBtn.classList.toggle('on', on)
+        restoreBtn.setAttribute('aria-checked', String(on))
+      }
+
+      restoreBtn.addEventListener('click', async () => {
+        const on = !restoreBtn.classList.contains('on')
+        await window.dshShell.settings.setRestore(on)
+        restoreBtn.classList.toggle('on', on)
+        restoreBtn.setAttribute('aria-checked', String(on))
+      })
+
       loginItemBtn.addEventListener('click', async () => {
         const on = !loginItemBtn.classList.contains('on')
         await window.dshShell.settings.setLoginItem(on)
@@ -327,6 +346,7 @@
       renderCurrent()
       renderInstances()
       renderLoginItem()
+      renderRestore()
     </script>
   </body>
 </html>

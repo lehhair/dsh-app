@@ -20,6 +20,7 @@ const https = require('node:https')
 const net = require('node:net')
 const fs = require('node:fs')
 const { createRegistry } = require('./registry')
+const { createStore } = require('./store')
 
 const ROOT = __dirname
 const DSH_BIN = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
@@ -89,6 +90,7 @@ function rgbToHex(value) {
 // ---- embedded local instance state ----
 let local = null // { child, port, url, logs: string[] }
 let registry = null // remote-node registry (instances + encrypted keys)
+let shellStore = null // shell behavior store (restore-last-node, ...)
 
 function capture(child, label) {
   const sink = (stream) => stream.on('data', (chunk) => {
@@ -260,6 +262,7 @@ async function connectById(id) {
     showView(id)
     if (!alreadyLoaded) void view.webContents.loadURL(instance.url)
     shellWindow?.webContents.send('connection:changed', { name: instance.name })
+    shellStore?.set('lastNode', { type: 'remote', id })
     console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
     return { ok: true, url: instance.url, cached: alreadyLoaded }
   } catch (error) {
@@ -437,6 +440,7 @@ ipcMain.handle('shell:connect', async (_event, url) => {
   showView('local')
   if (!view.webContents.getURL().startsWith(target)) void view.webContents.loadURL(target)
   shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
+  shellStore?.set('lastNode', { type: 'local' })
   return { ok: true }
 })
 
@@ -571,10 +575,16 @@ ipcMain.handle('settings:set-login-item', (_event, enabled) => {
   app.setLoginItemSettings({ openAtLogin: enabled === true })
   return { ok: true }
 })
+ipcMain.handle('settings:get-restore', () => shellStore?.get('restoreLastNode') === true)
+ipcMain.handle('settings:set-restore', (_event, enabled) => {
+  shellStore?.set('restoreLastNode', enabled === true)
+  return { ok: true }
+})
 
 // ---- lifecycle ----
 app.whenReady().then(() => {
   registry = createRegistry(app.getPath('userData'), safeStorage)
+  shellStore = createStore(app.getPath('userData'))
   createWindow()
   if (process.env.DSH_AUTOSTART === '1') {
     // DSH_REMOTE_URL [+ DSH_REMOTE_KEY] boots straight into a remote node;
@@ -588,6 +598,22 @@ app.whenReady().then(() => {
         if (result.ok) {
           const view = showView('local')
           await view.webContents.loadURL(result.url)
+        }
+      })
+    }
+  } else if (shellStore.get('restoreLastNode') === true) {
+    // Restore the last connected node on launch.
+    const last = shellStore.get('lastNode')
+    if (last?.type === 'remote' && typeof last.id === 'string') {
+      connectById(last.id).then((result) => {
+        console.log(`[restore] ${result.ok ? `connected ${result.url}` : `failed: ${result.error}`}`)
+      })
+    } else if (last?.type === 'local') {
+      startLocal().then(async (result) => {
+        if (result.ok) {
+          const view = showView('local')
+          await view.webContents.loadURL(result.url)
+          console.log('[restore] local connected')
         }
       })
     }

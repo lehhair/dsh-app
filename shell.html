@@ -219,6 +219,40 @@
       .field:focus { border-color: var(--shell-brand); }
       .field::placeholder { color: var(--shell-fg-tertiary); }
 
+      /* behavior row with toggle switch */
+      .behavior {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+      }
+      .behavior .label { font-size: 14px; }
+      .toggle {
+        position: relative;
+        flex: none;
+        width: 36px;
+        height: 20px;
+        border-radius: 10px;
+        border: 1px solid var(--shell-border);
+        background: var(--shell-layer);
+        cursor: pointer;
+        transition: background-color 0.12s ease, border-color 0.12s ease;
+      }
+      .toggle::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--shell-fg-secondary);
+        transition: transform 0.15s ease, background-color 0.12s ease;
+      }
+      .toggle.on { background: var(--shell-brand); border-color: var(--shell-brand); }
+      .toggle.on::after { transform: translateX(16px); background: var(--shell-bg); }
+
       /* remote instance rows (dsh look: divider rows, no cards) */
       .instance-row {
         padding: 14px 0;
@@ -400,6 +434,10 @@
         <section class="section remote">
           <div class="row-title">远程节点 <button id="remote-add" class="btn sm outline">添加实例</button></div>
           <p class="meta">连接远程 dsh（经网关，访问密钥注入）；可添加、保存、切换多个节点。</p>
+          <div class="behavior" style="padding:2px 0 10px">
+            <span class="label">启动时恢复上次连接</span>
+            <button id="restore-toggle" class="toggle" role="switch" aria-checked="false" title="下次启动自动打开上次连接的节点"></button>
+          </div>
           <p class="error" id="remote-error" style="min-height:0;margin:0 0 8px"></p>
           <input id="remote-search" class="field" placeholder="搜索实例（名称 / 地址）" spellcheck="false" style="margin-bottom:4px" />
           <div id="remote-list" class="remote-list"></div>
@@ -582,7 +620,20 @@
 
       const remoteSearch = document.getElementById('remote-search')
       const remoteError = document.getElementById('remote-error')
+      const restoreToggle = document.getElementById('restore-toggle')
       const healthCache = new Map() // instanceId -> { status, at } (30s TTL)
+
+      async function renderRestore() {
+        const on = await window.dshShell.settings.getRestore()
+        restoreToggle.classList.toggle('on', on)
+        restoreToggle.setAttribute('aria-checked', String(on))
+      }
+      restoreToggle.addEventListener('click', async () => {
+        const on = !restoreToggle.classList.contains('on')
+        await window.dshShell.settings.setRestore(on)
+        restoreToggle.classList.toggle('on', on)
+        restoreToggle.setAttribute('aria-checked', String(on))
+      })
 
       function applyHealth(dot, status) {
         dot.className = status === 'online' ? 'dot done'
@@ -720,6 +771,7 @@
       })
       refresh()
       renderRemoteList()
+      renderRestore()
 
       // inactive-window dimming (mainstream title-bar behavior)
       const syncActive = () => document.body.classList.toggle('inactive', !document.hasFocus())
