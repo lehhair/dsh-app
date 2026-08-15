@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dsh app</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg-base: rgb(249, 250, 251);
+        --label-primary: rgb(15, 17, 21);
+        --label-secondary: rgb(97, 102, 107);
+        --label-tertiary: rgb(129, 133, 140);
+        --brand: rgb(65, 118, 230);
+        --brand-hover: rgb(86, 134, 254);
+        --input-bg: rgb(249, 250, 251);
+        --border-l2: rgba(0, 0, 0, 0.1);
+        --border-l3: rgba(0, 0, 0, 0.12);
+        --hover: rgba(38, 49, 72, 0.06);
+        --card-bg: rgb(255, 255, 255);
+        --titlebar-bg: rgb(249, 250, 251);
+        --titlebar-fg: rgb(15, 17, 21);
+        --close-hover: rgb(232, 17, 35);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-base: rgb(21, 21, 23);
+          --label-primary: rgb(249, 250, 251);
+          --label-secondary: rgb(207, 211, 214);
+          --label-tertiary: rgb(173, 178, 184);
+          --brand: rgb(103, 158, 254);
+          --brand-hover: rgb(65, 118, 230);
+          --input-bg: rgb(27, 27, 28);
+          --border-l2: rgba(255, 255, 255, 0.12);
+          --border-l3: rgba(255, 255, 255, 0.16);
+          --hover: rgba(255, 255, 255, 0.08);
+          --card-bg: rgb(27, 27, 28);
+          --titlebar-bg: rgb(21, 21, 23);
+          --titlebar-fg: rgb(249, 250, 251);
+          --close-hover: rgb(232, 17, 35);
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg-base);
+        color: var(--label-primary);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* ---- custom title bar ---- */
+      .titlebar {
+        height: 44px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        background: var(--titlebar-bg);
+        border-bottom: 1px solid var(--border-l2);
+        user-select: none;
+        -webkit-app-region: drag;
+      }
+      .titlebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--label-primary);
+        white-space: nowrap;
+      }
+      .titlebar .mark {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        background: linear-gradient(135deg, var(--brand), var(--brand-hover));
+        flex: none;
+      }
+      .titlebar .status {
+        font-size: 12px;
+        color: var(--label-tertiary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .titlebar .spacer { flex: 1; }
+      .titlebar button {
+        -webkit-app-region: no-drag;
+        width: 46px;
+        height: 100%;
+        border: none;
+        background: transparent;
+        color: var(--label-secondary);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: default;
+      }
+      .titlebar button:hover { background: var(--hover); color: var(--label-primary); }
+      .titlebar button.close:hover { background: var(--close-hover); color: #fff; }
+      .titlebar button svg { width: 10px; height: 10px; display: block; }
+      .titlebar button#back {
+        width: auto;
+        padding: 0 14px;
+        margin-right: 6px;
+        height: 28px;
+        border-radius: 14px;
+        border: 1px solid var(--border-l2);
+        font-size: 12px;
+      }
+
+      /* ---- content area ---- */
+      .content {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        justify-content: center;
+        padding: 40px 24px;
+      }
+      .page { width: min(560px, 100%); }
+      h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+      .sub { font-size: 14px; color: var(--label-tertiary); margin: 0 0 28px; }
+      .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-l2);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+      .card h2 { font-size: 15px; font-weight: 500; margin: 0 0 12px; }
+      .row { display: flex; gap: 10px; align-items: center; margin: 8px 0; }
+      .badge {
+        font-size: 12px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-l2);
+        color: var(--label-secondary);
+      }
+      .badge.on { color: var(--brand); border-color: var(--brand); }
+      button.primary {
+        height: 34px;
+        padding: 0 18px;
+        border: none;
+        border-radius: 18px;
+        background: var(--brand);
+        color: #fff;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.primary:hover { background: var(--brand-hover); }
+      button.primary:disabled { opacity: 0.4; cursor: default; }
+      button.ghost {
+        height: 34px;
+        padding: 0 18px;
+        border-radius: 18px;
+        background: transparent;
+        color: var(--label-primary);
+        border: 1px solid var(--border-l2);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button.ghost:hover { background: var(--hover); }
+      button.ghost:disabled { opacity: 0.4; cursor: default; }
+      pre.log {
+        margin: 12px 0 0;
+        padding: 10px 12px;
+        background: var(--input-bg);
+        border: 1px solid var(--border-l2);
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--label-secondary);
+        max-height: 200px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .error { color: rgb(236, 19, 19); font-size: 13px; min-height: 20px; }
+      @media (prefers-color-scheme: dark) {
+        .error { color: rgb(242, 90, 90); }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="titlebar">
+      <div class="brand">
+        <span class="mark"></span>
+        <span>dsh app</span>
+        <span class="status" id="title-status"></span>
+      </div>
+      <div class="spacer"></div>
+      <button id="back" title="返回启动页" hidden>返回</button>
+      <button id="min" title="最小化">
+        <svg viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button id="max" title="最大化">
+        <svg class="icon-max" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"/></svg>
+        <svg class="icon-restore" viewBox="0 0 10 10" hidden><path d="M2.5 2.5v-2h6v6h-2" fill="none" stroke="currentColor"/><rect x="0.5" y="2.5" width="6" height="6" fill="none" stroke="currentColor"/></svg>
+      </button>
+      <button id="close" class="close" title="关闭">
+        <svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+    </header>
+
+    <main class="content">
+      <div class="page">
+        <h1>dsh app</h1>
+        <p class="sub">内嵌 dsh 运行时 · 深度内嵌 · 与 npx dsh 等价</p>
+
+        <div class="card">
+          <h2>本机实例 <span id="badge" class="badge">未知</span></h2>
+          <p class="sub" id="meta" style="margin-bottom:12px">未启动</p>
+          <div class="row">
+            <button id="start" class="primary">启动内嵌 dsh</button>
+            <button id="stop" class="ghost" disabled>停止</button>
+            <button id="open" class="ghost" disabled>打开界面</button>
+          </div>
+          <p class="error" id="error"></p>
+          <pre class="log" id="log" hidden></pre>
+        </div>
+
+        <div class="card">
+          <h2>远程节点</h2>
+          <p class="sub" style="margin-bottom:0">远程实例管理（代理注入 Bearer）将在下一版加入。</p>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const badge = document.getElementById('badge')
+      const meta = document.getElementById('meta')
+      const error = document.getElementById('error')
+      const log = document.getElementById('log')
+      const startBtn = document.getElementById('start')
+      const stopBtn = document.getElementById('stop')
+      const openBtn = document.getElementById('open')
+      const backBtn = document.getElementById('back')
+      const titleStatus = document.getElementById('title-status')
+
+      let current = null // { port, url }
+
+      function setState(running, port, url) {
+        current = running ? { port, url } : null
+        badge.textContent = running ? '运行中' : '已停止'
+        badge.classList.toggle('on', running)
+        meta.textContent = running ? `http://127.0.0.1:${port}/` : '未启动'
+        stopBtn.disabled = !running
+        openBtn.disabled = !running
+        startBtn.disabled = running
+        titleStatus.textContent = running ? `· ${url}` : ''
+      }
+
+      async function refresh() {
+        const s = await window.dshShell.status()
+        setState(s.running, s.port, s.url)
+        if (s.running) {
+          const logs = await window.dshShell.logs()
+          log.hidden = false
+          log.textContent = logs.join('').slice(-4000)
+          log.scrollTop = log.scrollHeight
+        }
+      }
+
+      startBtn.addEventListener('click', async () => {
+        error.textContent = ''
+        startBtn.disabled = true
+        startBtn.textContent = '启动中…'
+        const result = await window.dshShell.startLocal()
+        startBtn.textContent = '启动内嵌 dsh'
+        if (result.ok) {
+          setState(true, result.port, result.url)
+          log.hidden = false
+          log.textContent = (await window.dshShell.logs()).join('').slice(-4000)
+        } else {
+          setState(false)
+          error.textContent = result.error || '启动失败'
+          log.hidden = false
+          log.textContent = (result.logs || []).join('').slice(-4000)
+        }
+      })
+
+      stopBtn.addEventListener('click', async () => {
+        await window.dshShell.stopLocal()
+        setState(false)
+      })
+
+      openBtn.addEventListener('click', async () => {
+        if (!current) return
+        const r = await window.dshShell.connect(current.url)
+        if (r.ok) backBtn.hidden = false
+      })
+
+      backBtn.addEventListener('click', async () => {
+        await window.dshShell.back()
+        backBtn.hidden = true
+      })
+
+      // custom title bar controls
+      document.getElementById('min').addEventListener('click', () => window.dshShell.window.minimize())
+      document.getElementById('max').addEventListener('click', () => window.dshShell.window.toggleMaximize())
+      document.getElementById('close').addEventListener('click', () => window.dshShell.window.close())
+
+      async function syncMaximize() {
+        const maximized = await window.dshShell.window.isMaximized()
+        document.getElementById('max').classList.toggle('is-maximized', maximized)
+        document.querySelector('.icon-max').hidden = maximized
+        document.querySelector('.icon-restore').hidden = !maximized
+      }
+      window.dshShell.window.onMaximizedChanged(syncMaximize)
+      syncMaximize()
+
+      window.dshShell.onExited(() => {
+        setState(false)
+        backBtn.hidden = true
+      })
+      refresh()
+    </script>
+  </body>
+</html>

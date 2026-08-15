@@ -10,12 +10,16 @@ dsh-app (Electron 43)
 ├─ .dsh-runtime/              npm 包 @deepseek-ai/dsh（内嵌 dsh 运行时，可重装）
 ├─ main.js                    壳主进程：随机端口 / spawn dsh / health / 杀进程树 / 窗口 / ipc
 ├─ preload.js                 launcher 桥（仅 file:// 页面暴露，远程页面无 API）
-├─ launcher/index.html        启动页：本机实例启停 + 连接（远程节点下一版）
+├─ shell.html                 壳 UI：自定义标题栏（拖拽 + 窗口按钮）+ launcher 面板
 └─ embedded-overlay.yml       内嵌 overlay：disable remote-gateway（避免抢占系统网关 8443）
 ```
 
+窗口结构：无边框 BrowserWindow（`frame: false`）运行壳 UI——自绘标题栏（`-webkit-app-region: drag`
+拖拽区 + 最小化/最大化/关闭按钮，最大化状态经 IPC 同步双态图标）与 launcher 面板；连接的 dsh web
+渲染在 **WebContentsView**（位于标题栏下方，完整视口不被遮挡，内容与 dsh web 完全一致）。
+
 内嵌运行：`node.exe lib/bin.js --patch embedded-overlay.yml --profile web --port <随机空闲端口>`，
-与 `npx dsh` 完全等价（原汁原味）。WebView 加载 `http://127.0.0.1:<port>/`。
+与 `npx dsh` 完全等价（原汁原味）。WebContentsView 加载 `http://127.0.0.1:<port>/`。
 
 ## 为什么内嵌 dsh 必须用官方 Node，而不是 Electron 内置 Node
 
@@ -39,11 +43,13 @@ npm start                          # 启动壳 → launcher → 点"启动内嵌
 npm run start:autostart            # 启动壳并自动拉起内嵌 dsh（开发用）
 ```
 
-## 已验证（第一版闭环）
+## 已验证
 
 - 壳 spawn 官方 node + npm 版 dsh：HTTP 200、`__DSH_BOOT__` 注入、`/api/events.mux` WS 握手通过
 - 关窗/退出：`taskkill /T /F` 杀进程树，无端口/进程泄漏
 - 系统 `~/.dsh/profiles/web`（含 remote-gateway 等用户插件）在官方 Node 下正常加载
+- 自定义标题栏：无边框窗口 + 拖拽区 + 窗口按钮（最小化/最大化/关闭），dsh web 在
+  WebContentsView 完整视口渲染，不受标题栏遮挡
 
 ## 已知限制与下一版
 

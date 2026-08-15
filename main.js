@@ -4,10 +4,15 @@
 // internal ESM loader API `getOrInitializeCascadedLoader` to resolve
 // profile-installed plugins, which Electron's patched kernel lacks).
 //
+// Window structure: frameless BrowserWindow running the shell UI (custom
+// title bar + launcher panel); the connected dsh web renders in a
+// WebContentsView laid out below the title bar, so the remote page keeps a
+// full, unoccluded viewport ("renders exactly like dsh web").
+//
 // Embedded run:  node.exe lib/bin.js --patch <overlay> --profile web --port <free>
 // Remote nodes (local proxy injecting Bearer) land in a later phase.
 
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron')
 const path = require('node:path')
 const { spawn, exec } = require('node:child_process')
 const http = require('node:http')
@@ -17,7 +22,8 @@ const fs = require('node:fs')
 const ROOT = __dirname
 const DSH_BIN = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 const OVERLAY = path.join(ROOT, 'embedded-overlay.yml')
-const LAUNCHER = path.join(ROOT, 'launcher', 'index.html')
+const SHELL_HTML = path.join(ROOT, 'shell.html')
+const TITLEBAR_HEIGHT = 44
 
 /** The node.exe that runs the embedded dsh: bundled in packaged builds, system PATH in dev. */
 function resolveNodeExe() {
@@ -106,7 +112,7 @@ async function startLocal() {
   child.on('exit', (code, signal) => {
     console.log(`[dsh] exited code=${code} signal=${signal}`)
     local = null
-    mainWindow?.webContents.send('local:exited', { code })
+    shellWindow?.webContents.send('local:exited', { code })
   })
   try {
     await waitForHealth(url)
@@ -128,14 +134,24 @@ function stopLocal() {
   }
 }
 
-// ---- window ----
-let mainWindow = null
+// ---- window: frameless shell UI + WebContentsView for the dsh page ----
+let shellWindow = null
+let dshView = null
+
+function layoutDshView() {
+  if (!shellWindow || !dshView) return
+  const [width, height] = shellWindow.getContentSize()
+  dshView.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
+}
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  shellWindow = new BrowserWindow({
     width: 1440,
     height: 900,
+    minWidth: 800,
+    minHeight: 560,
     title: 'dsh app',
+    frame: false,
     backgroundColor: '#151517',
     webPreferences: {
       preload: path.join(ROOT, 'preload.js'),
@@ -144,8 +160,19 @@ function createWindow() {
       sandbox: true,
     },
   })
-  mainWindow.loadFile(LAUNCHER)
-  mainWindow.on('closed', () => { mainWindow = null })
+  shellWindow.loadFile(SHELL_HTML)
+
+  // The connected dsh web renders here, below the title bar; the shell UI
+  // (title bar + launcher panel) stays in the window's own webContents.
+  dshView = new WebContentsView({ webPreferences: { contextIsolation: true, sandbox: true } })
+  shellWindow.contentView.addChildView(dshView)
+  dshView.setVisible(false)
+  layoutDshView()
+
+  shellWindow.on('resize', layoutDshView)
+  shellWindow.on('maximize', () => shellWindow?.webContents.send('win:maximized-changed', true))
+  shellWindow.on('unmaximize', () => shellWindow?.webContents.send('win:maximized-changed', false))
+  shellWindow.on('closed', () => { shellWindow = null })
 }
 
 // ---- ipc (launcher only; preload gates on file: origin) ----
@@ -155,17 +182,42 @@ ipcMain.handle('local:status', () => local
   ? { running: true, port: local.port, url: local.url }
   : { running: false })
 ipcMain.handle('local:logs', () => local?.logs ?? [])
-ipcMain.handle('shell:connect', (_event, url) => {
-  if (mainWindow) mainWindow.loadURL(String(url))
+
+// Connect the dsh view to a URL and bring it over the launcher panel.
+ipcMain.handle('shell:connect', async (_event, url) => {
+  const target = String(url)
+  if (!dshView) return { ok: false, error: 'view unavailable' }
+  await dshView.webContents.loadURL(target)
+  dshView.setVisible(true)
   return { ok: true }
 })
+
+// Back to the launcher panel (hides the dsh view).
+ipcMain.handle('shell:back', () => {
+  dshView?.setVisible(false)
+  return { ok: true }
+})
+
+// Custom title bar window controls.
+ipcMain.handle('win:minimize', () => { shellWindow?.minimize(); return { ok: true } })
+ipcMain.handle('win:toggle-maximize', () => {
+  if (!shellWindow) return { ok: true }
+  if (shellWindow.isMaximized()) shellWindow.unmaximize()
+  else shellWindow.maximize()
+  return { ok: true }
+})
+ipcMain.handle('win:close', () => { shellWindow?.close(); return { ok: true } })
+ipcMain.handle('win:is-maximized', () => shellWindow?.isMaximized() ?? false)
 
 // ---- lifecycle ----
 app.whenReady().then(() => {
   createWindow()
   if (process.env.DSH_AUTOSTART === '1') {
-    startLocal().then((result) => {
-      if (result.ok && mainWindow) mainWindow.loadURL(result.url)
+    startLocal().then(async (result) => {
+      if (result.ok) {
+        await dshView.webContents.loadURL(result.url)
+        dshView.setVisible(true)
+      }
     })
   }
 })
