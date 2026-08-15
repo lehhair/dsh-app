@@ -36,7 +36,11 @@
     btn.className = BACK_KEY
     btn.textContent = '回到启动页'
     btn.addEventListener('click', function () {
-      if (window.__dshAppBackToLauncher) window.__dshAppBackToLauncher()
+      if (window.DshNativeBridge && window.DshNativeBridge.close) {
+        window.DshNativeBridge.close()
+      } else if (window.__dshAppBackToLauncher) {
+        window.__dshAppBackToLauncher()
+      }
     })
     host.appendChild(btn)
     backButton = btn

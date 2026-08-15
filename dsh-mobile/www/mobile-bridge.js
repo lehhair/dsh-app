@@ -15,20 +15,6 @@
   const NODES_KEY = 'dsh-mobile-nodes'
   const LAST_KEY = 'dsh-mobile-last'
 
-  // ---- status bar: immersive (page draws behind it) + theme-following ----
-  // setBackgroundColor is ignored while overlaysWebView is true, so the page
-  // background + safe-area padding own the fusion. In a plain browser there
-  // is no StatusBar plugin — skip silently.
-  async function initStatusBar() {
-    if (!StatusBar) return
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    await StatusBar.setOverlaysWebView({ overlay: true })
-    await StatusBar.setStyle({ style: dark ? 'DARK' : 'LIGHT' })
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async (e) => {
-      await StatusBar.setStyle({ style: e.matches ? 'DARK' : 'LIGHT' })
-    })
-  }
-
   async function readNodes() {
     if (!Prefs) return []
     const { value } = await Prefs.get({ key: NODES_KEY })
@@ -38,6 +24,26 @@
   async function writeNodes(nodes) {
     if (!Prefs) return
     await Prefs.set({ key: NODES_KEY, value: JSON.stringify(nodes) })
+  }
+
+  // Capacitor injects the plugin bridge asynchronously; the IIFE may beat it.
+  // Re-read plugin refs at call time (the IIFE snapshot may be stale).
+  function whenCapacitorReady(fn) {
+    const run = () => {
+      const sb = window.Capacitor?.Plugins?.StatusBar
+      if (sb) fn(sb)
+    }
+    if (window.Capacitor?.isNativePlatform?.()) {
+      if (window.Capacitor.Plugins?.StatusBar) {
+        run()
+      } else {
+        window.Capacitor.addListener?.('capacitorReady', run)
+      }
+    } else if (document.readyState === 'complete') {
+      run()
+    } else {
+      window.addEventListener('DOMContentLoaded', run, { once: true })
+    }
   }
 
   window.Bridge = {
@@ -79,40 +85,40 @@
       const nodes = await readNodes()
       const node = nodes.find((n) => n.id === id)
       if (!node) return { error: '节点不存在' }
-      if (!InAppBrowser) return { error: '当前环境不支持内嵌浏览器' }
+      const DshNative = window.Capacitor?.Plugins?.DshNative
+      if (!DshNative) return { error: '当前环境不支持原生 WebView' }
       await Prefs?.set({ key: LAST_KEY, value: node.url })
-      await InAppBrowser.openInWebView({
+
+      // 1. Gateway session: same login as the desktop shell (POST
+      //    /_gateway/login), performed natively so there is no CORS wall.
+      let cookie = null
+      if (node.key) {
+        const login = await DshNative.login({ url: node.url, key: node.key })
+        if (login?.ok && login.cookie) cookie = login.cookie
+      }
+
+      // 2. Inject the "回到启动页" button script (desktop-proven). The page
+      //    calls DshNativeBridge.close() to pop back to the launcher.
+      const injectScript = document.getElementById('inject-back-js')?.textContent
+
+      // 3. Open the gateway with the cookie pre-injected — no login flash.
+      await DshNative.open({
         url: node.url,
-        options: {
-          showURL: true,
-          showToolbar: true,
-          closeButtonText: '返回',
-          mediaPlaybackRequiresUserAction: true,
-          android: {
-            allowZoom: true,
-            hardwareBack: true,
-            pauseMedia: false,
-            isIsolated: false,
-          },
-          iOS: {
-            allowOverScroll: false,
-            enableViewportScale: false,
-            allowInLineMediaPlayback: false,
-            surpressIncrementalRendering: false,
-            viewStyle: 2, // FULL_SCREEN
-            animationEffect: 0,
-            allowsBackForwardNavigationGestures: true,
-          },
-        },
-        // Gateway session: POST /_gateway/login answers Set-Cookie
-        // dsh_gateway_key=...; the WebView lands on the login page on the
-        // same origin, so the cookie sticks and the app proceeds. A future
-        // build can pre-authenticate and pass the cookie here as a header.
-        customHeaders: node.key ? { Authorization: `Bearer ${node.key}` } : {},
+        cookieName: 'dsh_gateway_key',
+        cookieValue: cookie ?? '',
+        injectScript: injectScript ?? '',
       })
-      return { ok: true }
+      return { ok: true, authed: Boolean(cookie) }
     },
   }
 
-  await initStatusBar()
+  whenCapacitorReady(async (sb) => {
+    if (!sb) return
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    await sb.setOverlaysWebView({ overlay: true })
+    await sb.setStyle({ style: dark ? 'DARK' : 'LIGHT' })
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async (e) => {
+      await sb.setStyle({ style: e.matches ? 'DARK' : 'LIGHT' })
+    })
+  })
 })()
