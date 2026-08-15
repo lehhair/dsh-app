@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- dsh-app connects to the user's own dsh gateways, which routinely serve
+     plain http:// on a LAN (desktop does the same). Android 9+ blocks
+     cleartext by default; allow it app-wide so in-app WebViews can load
+     http:// gateways. HTTPS remains fully supported. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

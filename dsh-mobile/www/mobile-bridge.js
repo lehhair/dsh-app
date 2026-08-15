@@ -10,9 +10,24 @@
   const Cap = window.Capacitor
   const Prefs = Cap?.Plugins?.Preferences
   const InAppBrowser = Cap?.Plugins?.InAppBrowser
+  const StatusBar = Cap?.Plugins?.StatusBar
 
   const NODES_KEY = 'dsh-mobile-nodes'
   const LAST_KEY = 'dsh-mobile-last'
+
+  // ---- status bar: immersive (page draws behind it) + theme-following ----
+  // setBackgroundColor is ignored while overlaysWebView is true, so the page
+  // background + safe-area padding own the fusion. In a plain browser there
+  // is no StatusBar plugin — skip silently.
+  async function initStatusBar() {
+    if (!StatusBar) return
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    await StatusBar.setOverlaysWebView({ overlay: true })
+    await StatusBar.setStyle({ style: dark ? 'DARK' : 'LIGHT' })
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async (e) => {
+      await StatusBar.setStyle({ style: e.matches ? 'DARK' : 'LIGHT' })
+    })
+  }
 
   async function readNodes() {
     if (!Prefs) return []
@@ -41,8 +56,10 @@
         url,
       }
       // Key never persisted in plaintext in the real build (would ride the
-      // system keystore); kept here for the desktop mock parity.
+      // system keystore); kept here for the desktop mock parity. Empty key on
+      // edit keeps the previously saved one (desktop behavior).
       if (input.key) record.key = input.key
+      else if (existing?.key) record.key = existing.key
       if (existing) {
         const i = nodes.indexOf(existing)
         nodes[i] = { ...existing, ...record }
@@ -96,4 +113,6 @@
       return { ok: true }
     },
   }
+
+  await initStatusBar()
 })()

@@ -48,13 +48,13 @@
         padding-bottom: env(safe-area-inset-bottom);
       }
 
-      /* brand header */
+      /* brand header — padded below the status bar when overlaysWebView=true */
       header {
         flex: none;
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 14px 16px 10px;
+        padding: calc(14px + env(safe-area-inset-top)) 16px 10px;
       }
       .logo {
         display: inline-block;
@@ -200,6 +200,10 @@
           connect.className = 'btn sm primary'
           connect.textContent = '连接'
           connect.addEventListener('click', () => Bridge.connect(node.id))
+          const edit = document.createElement('button')
+          edit.className = 'btn sm'
+          edit.textContent = '编辑'
+          edit.addEventListener('click', () => openForm(node))
           const del = document.createElement('button')
           del.className = 'btn sm'
           del.textContent = '删除'
@@ -207,7 +211,7 @@
             await Bridge.removeNode(node.id)
             await refresh()
           })
-          actions.append(connect, del)
+          actions.append(connect, edit, del)
           row.append(dot, info, actions)
           listEl.appendChild(row)
         }
@@ -252,6 +256,7 @@
         // insert after header
         document.querySelector('header').after(form)
         name.focus()
+        form.scrollIntoView({ behavior: 'smooth', block: 'start' })
         save.addEventListener('click', async () => {
           err.textContent = ''
           const r = await Bridge.saveNode({
