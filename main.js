@@ -303,6 +303,7 @@ async function checkRemoteHealth(url, key, timeoutMs = 5000) {
 
 // ---- window: frameless shell UI + per-instance WebContentsViews ----
 let shellWindow = null
+let lastThemeTokens = null // cached palette pushed to the settings dialog
 const views = new Map() // 'local' | instanceId | 'adhoc' -> WebContentsView
 let activeViewId = null // which view is currently shown
 
@@ -402,10 +403,13 @@ function createWindow() {
 
   // Forward sampled theme tokens ONLY from the currently shown view (hidden
   // views keep sampling but must not override the visible page's palette).
+  // The last palette is cached and also pushed to the settings dialog, so it
+  // always matches the connected dsh theme instead of the system default.
   ipcMain.on('theme:changed', (event, tokens) => {
     const active = activeViewId ? views.get(activeViewId) : undefined
     if (active === undefined || event.sender !== active.webContents) return
     console.log(`[theme] synced ${Object.keys(tokens).length} tokens`)
+    lastThemeTokens = tokens
     const bg = tokens['--dsw-alias-bg-base']
     const fg = tokens['--dsw-alias-label-primary']
     if (shellWindow && typeof bg === 'string' && typeof fg === 'string') {
@@ -416,6 +420,7 @@ function createWindow() {
       })
     }
     shellWindow?.webContents.send('theme:sync', tokens)
+    dialogView?.webContents.send('theme:sync', tokens)
   })
 
   shellWindow.on('resize', layoutViews)
@@ -539,7 +544,9 @@ function openSettings() {
   // Re-add so the dialog draws above every instance view, then load fresh.
   shellWindow.contentView.removeChildView(view)
   shellWindow.contentView.addChildView(view)
-  view.webContents.loadFile(SETTINGS_HTML)
+  view.webContents.loadFile(SETTINGS_HTML).then(() => {
+    if (lastThemeTokens) view.webContents.send('theme:sync', lastThemeTokens)
+  })
   view.setVisible(true)
 }
 

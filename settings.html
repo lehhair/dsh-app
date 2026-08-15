@@ -12,7 +12,9 @@
         color-scheme: light dark;
         --shell-bg: rgb(255, 255, 255);
         --shell-layer: rgb(255, 255, 255);
+        --shell-layer-2: rgb(255, 255, 255);
         --shell-fg: rgb(15, 17, 21);
+        --shell-fg-foreground: rgb(255, 255, 255);
         --shell-fg-secondary: rgb(97, 102, 107);
         --shell-fg-tertiary: rgb(129, 133, 140);
         --shell-border: rgba(0, 0, 0, 0.1);
@@ -26,7 +28,9 @@
         :root {
           --shell-bg: rgb(21, 21, 23);
           --shell-layer: rgb(44, 44, 46);
+          --shell-layer-2: rgb(44, 44, 46);
           --shell-fg: rgb(249, 250, 251);
+          --shell-fg-foreground: rgb(15, 17, 21);
           --shell-fg-secondary: rgb(207, 211, 214);
           --shell-fg-tertiary: rgb(173, 178, 184);
           --shell-border: rgba(255, 255, 255, 0.12);
@@ -292,6 +296,30 @@
     </div>
 
     <script>
+      // ---- dsh alias token -> shell variable map (theme fusion, same as launcher) ----
+      const TOKEN_MAP = {
+        '--dsw-alias-bg-base': '--shell-bg',
+        '--dsw-alias-bg-layer-1': '--shell-layer',
+        '--dsw-alias-bg-layer-2': '--shell-layer-2',
+        '--dsw-alias-label-primary': '--shell-fg',
+        '--dsw-alias-label-primary-foreground': '--shell-fg-foreground',
+        '--dsw-alias-label-secondary': '--shell-fg-secondary',
+        '--dsw-alias-label-tertiary': '--shell-fg-tertiary',
+        '--dsw-alias-border-l2': '--shell-border',
+        '--dsw-alias-interactive-bg-hover': '--shell-hover',
+        '--dsw-alias-button-primary-fill': '--shell-brand',
+        '--dsw-alias-button-primary-hover': '--shell-brand-hover',
+        '--dsw-alias-state-error-primary': '--shell-danger',
+        '--dsw-alias-state-success-primary': '--shell-success',
+      }
+      window.dshShell.onThemeSync((tokens) => {
+        const root = document.documentElement
+        for (const [alias, value] of Object.entries(tokens)) {
+          const target = TOKEN_MAP[alias]
+          if (target && value) root.style.setProperty(target, value)
+        }
+      })
+
       const closeBtn = document.getElementById('close')
       const curName = document.getElementById('cur-name')
       const curUrl = document.getElementById('cur-url')
