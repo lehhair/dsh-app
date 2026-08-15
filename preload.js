@@ -20,6 +20,11 @@ if (isLauncher) {
     // view switching (launcher <-> connected dsh web)
     connect: (url) => ipcRenderer.invoke('shell:connect', url),
     back: () => ipcRenderer.invoke('shell:back'),
+    // remote node connection (loopback proxy injecting the gateway key)
+    remote: {
+      connect: (url, key) => ipcRenderer.invoke('remote:connect', { url, key }),
+      disconnect: () => ipcRenderer.invoke('remote:disconnect'),
+    },
     // live theme sync from the connected dsh page (title-bar fusion)
     onThemeSync: (callback) => {
       const listener = (_event, tokens) => callback(tokens)

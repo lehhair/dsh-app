@@ -144,6 +144,22 @@
       .section .meta { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0 0 16px; }
       .section .hint { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0; }
       .actions { display: flex; gap: 8px; align-items: center; }
+      .field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .field {
+        height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--shell-border);
+        border-radius: 8px;
+        background: var(--shell-layer);
+        color: var(--shell-fg);
+        font: inherit;
+        font-size: 13px;
+        outline: none;
+        min-width: 180px;
+        flex: 1 1 200px;
+      }
+      .field:focus { border-color: var(--shell-brand); }
+      .field::placeholder { color: var(--shell-fg-tertiary); }
 
       /* dsh Button (figma 1:155): h36 capsule, pad 14, gap 4, r18 */
       .btn {
@@ -290,7 +306,13 @@
 
         <section class="section">
           <div class="row-title">远程节点</div>
-          <p class="hint">远程实例管理（代理注入 Bearer）将在下一版加入。</p>
+          <p class="meta">连接远程 dsh（经网关，访问密钥注入）</p>
+          <div class="field-row">
+            <input id="remote-url" class="field" placeholder="http://192.168.1.233:8443" spellcheck="false" />
+            <input id="remote-key" class="field" type="password" placeholder="访问密钥" />
+            <button id="remote-connect" class="btn primary">连接</button>
+          </div>
+          <p class="error" id="remote-error"></p>
         </section>
       </div>
     </main>
@@ -411,6 +433,30 @@
         const r = await window.dshShell.connect(current.url)
         if (r.ok) settingsBtn.hidden = false
       })
+
+      // remote node connection (stage-1 form; registry lands in stage 2)
+      const remoteUrlInput = document.getElementById('remote-url')
+      const remoteKeyInput = document.getElementById('remote-key')
+      const remoteConnectBtn = document.getElementById('remote-connect')
+      const remoteError = document.getElementById('remote-error')
+
+      remoteConnectBtn.addEventListener('click', async () => {
+        remoteError.textContent = ''
+        remoteConnectBtn.disabled = true
+        remoteConnectBtn.textContent = '连接中…'
+        const r = await window.dshShell.remote.connect(remoteUrlInput.value, remoteKeyInput.value)
+        remoteConnectBtn.disabled = false
+        remoteConnectBtn.textContent = '连接'
+        if (r.ok) {
+          settingsBtn.hidden = false
+          remoteUrlInput.value = ''
+          remoteKeyInput.value = ''
+        } else {
+          remoteError.textContent = r.error || '连接失败'
+        }
+      })
+      remoteUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') remoteConnectBtn.click() })
+      remoteKeyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') remoteConnectBtn.click() })
 
       // settings returns to the launcher (management) panel
       settingsBtn.addEventListener('click', async () => {

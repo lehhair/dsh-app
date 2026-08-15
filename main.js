@@ -18,6 +18,7 @@ const { spawn, exec } = require('node:child_process')
 const http = require('node:http')
 const net = require('node:net')
 const fs = require('node:fs')
+const { startRemoteProxy, stopRemoteProxy } = require('./proxy')
 
 const ROOT = __dirname
 const DSH_BIN = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
@@ -85,6 +86,7 @@ function rgbToHex(value) {
 
 // ---- embedded local instance state ----
 let local = null // { child, port, url, logs: string[] }
+let remote = null // { port, url } — loopback proxy for a remote node
 
 function capture(child, label) {
   const sink = (stream) => stream.on('data', (chunk) => {
@@ -138,6 +140,38 @@ function stopLocal() {
   if (local) {
     killTree(local.child.pid)
     local = null
+  }
+}
+
+/** Stop the remote-node loopback proxy, if one is running. */
+async function disconnectRemote() {
+  if (remote) {
+    stopRemoteProxy(remote)
+    remote = null
+  }
+}
+
+/**
+ * Connect the dsh view to a remote node through a loopback proxy that
+ * injects the gateway key (Bearer) on every request, WebSocket upgrades
+ * included.
+ */
+async function connectRemote(rawUrl, rawKey) {
+  const url = String(rawUrl ?? '').trim()
+  const key = String(rawKey ?? '')
+  if (!/^https?:\/\/[^/]+$/.test(url)) return { ok: false, error: '无效的地址，形如 http://192.168.1.233:8443' }
+  if (key.length === 0) return { ok: false, error: '缺少访问密钥' }
+  try {
+    await disconnectRemote()
+    const { port } = await startRemoteProxy(url, key)
+    const localUrl = `http://127.0.0.1:${port}/`
+    remote = { port, url: localUrl }
+    await dshView.webContents.loadURL(localUrl)
+    dshView.setVisible(true)
+    return { ok: true, url: localUrl }
+  } catch (error) {
+    await disconnectRemote()
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
@@ -230,8 +264,17 @@ ipcMain.handle('shell:connect', async (_event, url) => {
   return { ok: true }
 })
 
-// Back to the launcher panel (hides the dsh view).
-ipcMain.handle('shell:back', () => {
+// Back to the launcher panel (hides the dsh view; stops a remote proxy).
+ipcMain.handle('shell:back', async () => {
+  await disconnectRemote()
+  dshView?.setVisible(false)
+  return { ok: true }
+})
+
+// Remote node connection (loopback proxy injecting Bearer).
+ipcMain.handle('remote:connect', (_event, { url, key }) => connectRemote(url, key))
+ipcMain.handle('remote:disconnect', async () => {
+  await disconnectRemote()
   dshView?.setVisible(false)
   return { ok: true }
 })
@@ -251,12 +294,20 @@ ipcMain.handle('win:is-maximized', () => shellWindow?.isMaximized() ?? false)
 app.whenReady().then(() => {
   createWindow()
   if (process.env.DSH_AUTOSTART === '1') {
-    startLocal().then(async (result) => {
-      if (result.ok) {
-        await dshView.webContents.loadURL(result.url)
-        dshView.setVisible(true)
-      }
-    })
+    // DSH_REMOTE_URL [+ DSH_REMOTE_KEY] boots straight into a remote node;
+    // otherwise boot the embedded local instance.
+    if (process.env.DSH_REMOTE_URL) {
+      connectRemote(process.env.DSH_REMOTE_URL, process.env.DSH_REMOTE_KEY ?? '').then((result) => {
+        console.log(`[remote] ${result.ok ? `connected ${result.url}` : `failed: ${result.error}`}`)
+      })
+    } else {
+      startLocal().then(async (result) => {
+        if (result.ok) {
+          await dshView.webContents.loadURL(result.url)
+          dshView.setVisible(true)
+        }
+      })
+    }
   }
 })
 
@@ -264,4 +315,7 @@ app.on('window-all-closed', () => {
   stopLocal()
   app.quit()
 })
-app.on('will-quit', () => stopLocal())
+app.on('will-quit', () => {
+  stopLocal()
+  void disconnectRemote()
+})
