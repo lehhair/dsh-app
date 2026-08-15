@@ -398,8 +398,12 @@
          style (.error min-height: 20px) and would shear the dot into an
          ellipse. */
       .dot.danger { color: var(--shell-danger); }
-      .pill svg { width: 12px; height: 12px; display: block; }
-      .pill svg rect { fill: currentColor; opacity: 0.15; animation: dsh-state-dot-chase 1s infinite; }
+      .pill svg { width: 10px; height: 10px; display: block; }
+      /* dsh ongoing chase: fixed deepseek-450 blue (the state dot has no alias
+         token — dsh pins it to the static scale; identical in both themes),
+         each 2px cell on the 10px grid with its own negative animation-delay
+         (phased inline by setBadge) so the bright cell runs clockwise. */
+      .pill svg rect { fill: rgb(86, 134, 254); opacity: 0.15; animation: dsh-state-dot-chase 1s infinite; }
       @keyframes dsh-state-dot-chase {
         0%, 12.4% { opacity: 1; }
         12.5%, 24.9% { opacity: 0.6; }
@@ -556,14 +560,19 @@
           const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
           svg.setAttribute('viewBox', '0 0 10 10')
           svg.setAttribute('shape-rendering', 'crispEdges')
-          for (const [x, y] of [[0, 0], [4, 0], [8, 0], [8, 4], [8, 8], [4, 8], [0, 8], [0, 4]]) {
+          // dsh chase: 8 outer cells of a 3x3 matrix, clockwise from top-left;
+          // negative per-cell delay phases the trail so the bright cell runs
+          // around instead of all cells blinking in sync.
+          const cells = [[0, 0], [4, 0], [8, 0], [8, 4], [8, 8], [4, 8], [0, 8], [0, 4]]
+          cells.forEach(([x, y], index) => {
             const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
             rect.setAttribute('x', x)
             rect.setAttribute('y', y)
             rect.setAttribute('width', 2)
             rect.setAttribute('height', 2)
+            rect.style.animationDelay = `${(index - cells.length) * 125}ms`
             svg.appendChild(rect)
-          }
+          })
           badge.appendChild(svg)
         } else if (state === 'done' || state === 'error') {
           const dot = document.createElement('span')
