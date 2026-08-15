@@ -1,16 +1,11 @@
-// dsh-app main process: the Electron shell owns windows, process
-// lifecycle, and the launcher; the embedded dsh runtime runs under the
+// dsh-app main process. Flat single-window model: every window is the same
+// shell (launcher + per-window WebContentsViews for nodes + settings dialog
+// overlay). Connecting in the launcher enters THAT window; the title bar's
+// "new window" button opens another identical window, so windows are
+// peer-level with independent state. The embedded dsh runtime runs under the
 // bundled OFFICIAL node.exe (never Electron's Node — dsh needs Node's
 // internal ESM loader API `getOrInitializeCascadedLoader` to resolve
 // profile-installed plugins, which Electron's patched kernel lacks).
-//
-// Window structure: frameless BrowserWindow running the shell UI (custom
-// title bar + launcher panel); the connected dsh web renders in a
-// WebContentsView laid out below the title bar, so the remote page keeps a
-// full, unoccluded viewport ("renders exactly like dsh web").
-//
-// Embedded run:  node.exe lib/bin.js --patch <overlay> --profile web --port <free>
-// Remote nodes (local proxy injecting Bearer) land in a later phase.
 
 const { app, BrowserWindow, WebContentsView, ipcMain, safeStorage, nativeTheme } = require('electron')
 const path = require('node:path')
@@ -29,14 +24,12 @@ const SHELL_HTML = path.join(ROOT, 'shell.html')
 const SETTINGS_HTML = path.join(ROOT, 'settings.html')
 const TITLEBAR_HEIGHT = 40
 
-/** The node.exe that runs the embedded dsh: bundled in packaged builds, system PATH in dev. */
 function resolveNodeExe() {
   const bundled = path.join(ROOT, 'resources', 'node.exe')
   if (fs.existsSync(bundled)) return bundled
   return process.env.DSH_NODE ?? 'node'
 }
 
-/** Pick a free TCP port on loopback (dsh binds it; avoids squabbling with system dsh on 3080). */
 function pickFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer()
@@ -48,7 +41,6 @@ function pickFreePort() {
   })
 }
 
-/** Poll a URL until HTTP 200 or timeout. */
 function waitForHealth(url, timeoutMs = 90_000) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs
@@ -71,7 +63,6 @@ function waitForHealth(url, timeoutMs = 90_000) {
   })
 }
 
-/** Kill a process tree (Windows taskkill /T, else kill -9). */
 function killTree(pid) {
   if (!pid) return
   const cmd = process.platform === 'win32'
@@ -80,17 +71,16 @@ function killTree(pid) {
   exec(cmd, { windowsHide: true }, () => {})
 }
 
-/** Convert a computed `rgb(r, g, b)` (or `rgba`) string to #rrggbb for setTitleBarOverlay. */
 function rgbToHex(value) {
   const match = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(value)
   if (!match) return undefined
   return `#${[1, 2, 3].map((i) => Number(match[i]).toString(16).padStart(2, '0')).join('')}`
 }
 
-// ---- embedded local instance state ----
+// ---- embedded local instance ----
 let local = null // { child, port, url, logs: string[] }
-let registry = null // remote-node registry (instances + encrypted keys)
-let shellStore = null // shell behavior store (restore-last-node, ...)
+let registry = null
+let shellStore = null
 
 function capture(child, label) {
   const sink = (stream) => stream.on('data', (chunk) => {
@@ -122,14 +112,12 @@ async function startLocal() {
   local = { child, port, url, logs: [] }
   capture(child, 'out')
   capture(child, 'err')
-  child.on('exit', (code, signal) => {
-    console.log(`[dsh] exited code=${code} signal=${signal}`)
+  child.on('exit', (code) => {
+    console.log(`[dsh] exited code=${code}`)
     local = null
-    shellWindow?.webContents.send('local:exited', { code })
   })
   try {
     await waitForHealth(url)
-    // Health 200 can race the plugin tree; confirm the process survived.
     await new Promise((resolve) => setTimeout(resolve, 1000))
     if (child.exitCode !== null) throw new Error(`dsh exited during startup (code ${child.exitCode})`)
     return { ok: true, port, url }
@@ -147,16 +135,11 @@ function stopLocal() {
   }
 }
 
-/** The gateway login path and session cookie name (remote-gateway defaults). */
+// ---- gateway auth ----
 const GATEWAY_LOGIN_PATH = '/_gateway/login'
 const GATEWAY_COOKIE_NAME = 'dsh_gateway_key'
 const SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 
-/**
- * Pre-login to a remote gateway: POST the key, capture the Set-Cookie
- * session, so the view can load the gateway origin with the cookie already
- * in place (no login-page flash, and fetch + WebSocket both carry it).
- */
 function ensureGatewaySession(url, key) {
   const parsed = new URL(url)
   const transport = parsed.protocol === 'https:' ? https : http
@@ -195,7 +178,6 @@ function ensureGatewaySession(url, key) {
   })
 }
 
-/** Write the gateway session cookie into a view's (partition-isolated) session. */
 async function setViewCookie(view, url, value) {
   const parsed = new URL(url)
   const session = view.webContents.session
@@ -212,67 +194,7 @@ async function setViewCookie(view, url, value) {
   })
 }
 
-/**
- * Connect the dsh view to a remote node directly (no proxy layer): pre-login
- * to the gateway, plant the session cookie in that instance's own partition,
- * load the gateway origin. The origin is stable, so Chromium's disk cache
- * applies naturally; different instances never share cookies.
- */
-async function connectRemote(rawUrl, rawKey) {
-  const url = String(rawUrl ?? '').trim()
-  const key = String(rawKey ?? '')
-  if (!/^https?:\/\/[^/]+$/.test(url)) return { ok: false, error: '无效的地址，形如 http://192.168.1.233:8443' }
-  if (key.length === 0) return { ok: false, error: '缺少访问密钥' }
-  try {
-    const session = await ensureGatewaySession(url, key)
-    if (!session.ok) return session
-    const view = viewFor('adhoc')
-    await setViewCookie(view, url, session.cookie)
-    showView('adhoc')
-    if (!view.webContents.getURL().startsWith(url)) void view.webContents.loadURL(url).catch(() => {})
-    shellWindow?.webContents.send('connection:changed', { name: new URL(url).host })
-    return { ok: true, url }
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
-}
-
-/**
- * Connect by registry id. Each instance owns a partition-isolated view, so
- * two instances at the SAME URL with DIFFERENT keys keep separate sessions.
- * Re-entering an already-loaded instance just reveals its view.
- */
-async function connectById(id) {
-  console.log(`[connect] id=${id}`)
-  const instance = registry?.find(id)
-  if (instance === undefined) return { ok: false, error: '实例不存在' }
-  const key = registry.getSecret(id)
-  if (key === undefined) return { ok: false, error: '未保存访问密钥，请编辑实例补全' }
-  try {
-    const session = await ensureGatewaySession(instance.url, key)
-    if (!session.ok) {
-      console.log(`[connect] session failed: ${session.error}`)
-      return session
-    }
-    const view = viewFor(id)
-    await setViewCookie(view, instance.url, session.cookie)
-    const alreadyLoaded = view.webContents.getURL().startsWith(instance.url)
-    // Reveal immediately (dark ground + the page's own loading UI), then
-    // load without blocking the click: no dead seconds on the launcher.
-    showView(id)
-    if (!alreadyLoaded) void view.webContents.loadURL(instance.url).catch(() => {})
-    shellWindow?.webContents.send('connection:changed', { name: instance.name })
-    shellStore?.set('lastNode', { type: 'remote', id })
-    console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
-    return { ok: true, url: instance.url, cached: alreadyLoaded }
-  } catch (error) {
-    console.log(`[connect] error: ${error instanceof Error ? error.message : String(error)}`)
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
-}
-
-/** Probe one remote gateway's health with its stored key. */
-async function checkRemoteHealth(url, key, timeoutMs = 5000) {
+function checkRemoteHealth(url, key, timeoutMs = 5000) {
   return new Promise((resolve) => {
     let parsed
     try {
@@ -301,13 +223,10 @@ async function checkRemoteHealth(url, key, timeoutMs = 5000) {
   })
 }
 
-// ---- window: frameless shell UI + per-instance WebContentsViews ----
-let shellWindow = null
-let lastThemeTokens = null // cached palette pushed to the settings dialog
-const views = new Map() // 'local' | instanceId | 'adhoc' -> WebContentsView
-let activeViewId = null // which view is currently shown
+// ---- windows: every window is the same shell ----
+const appWindows = new Map() // win.id -> state { win, views, activeViewId, dialogView }
+let lastThemeTokens = null
 
-/** F12 opens DevTools for the given webContents (dev aid for both pages). */
 function attachDevTools(webContents) {
   webContents.on('before-input-event', (_event, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
@@ -316,28 +235,31 @@ function attachDevTools(webContents) {
   })
 }
 
-/**
- * Per-instance session partition: cookies and cache are isolated per node.
- * Two instances pointing at the SAME gateway URL with DIFFERENT keys get
- * separate cookie stores — no cross-talk (the previous single-view scheme
- * shared one origin cookie and overwrote each other's session).
- */
+/** Window state by a sender webContents (chrome, a node view, or the dialog). */
+function stateOf(sender) {
+  for (const st of appWindows.values()) {
+    if (st.win.webContents === sender || st.dialogView?.webContents === sender) return st
+    for (const view of st.views.values()) {
+      if (view.webContents === sender) return st
+    }
+  }
+  return undefined
+}
+
 function viewPartition(id) {
   return id === 'local' ? 'persist:dsh-local' : `persist:dsh-instance-${id}`
 }
 
-function layoutViews() {
-  if (!shellWindow) return
-  const [width, height] = shellWindow.getContentSize()
-  for (const view of views.values()) {
+function layoutViews(st) {
+  if (!st.win) return
+  const [width, height] = st.win.getContentSize()
+  for (const view of st.views.values()) {
     view.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
   }
-  if (dialogView) dialogView.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
 }
 
-/** Get (creating on demand) the WebContentsView for one target. */
-function viewFor(id) {
-  let view = views.get(id)
+function viewFor(st, id) {
+  let view = st.views.get(id)
   if (view === undefined) {
     view = new WebContentsView({
       webPreferences: {
@@ -347,43 +269,97 @@ function viewFor(id) {
         sandbox: true,
       },
     })
-    // Register BEFORE layoutViews: it iterates the Map to size each view,
-    // so a not-yet-registered view would keep 0x0 bounds and never show.
-    views.set(id, view)
-    // Loading ground follows the system theme (dsh pages do the same), so the
-    // pre-content blank matches what the page will paint — never a jarring
-    // dark-on-light or light-on-dark flash.
     view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#151517' : '#f9fafb')
-    shellWindow.contentView.addChildView(view)
+    st.views.set(id, view)
+    st.win.contentView.addChildView(view)
     view.setVisible(false)
-    layoutViews()
+    layoutViews(st)
     attachDevTools(view.webContents)
   }
   return view
 }
 
-/** Show one target's view (hiding all others). */
-function showView(id) {
-  const view = viewFor(id)
-  for (const [key, candidate] of views) candidate.setVisible(key === id)
-  activeViewId = id
+function showView(st, id) {
+  const view = viewFor(st, id)
+  for (const [key, candidate] of st.views) candidate.setVisible(key === id)
+  st.activeViewId = id
   return view
 }
 
-function hideAllViews() {
-  for (const view of views.values()) view.setVisible(false)
-  activeViewId = null
+function hideAllViews(st) {
+  for (const view of st.views.values()) view.setVisible(false)
+  st.activeViewId = null
 }
 
-function createWindow() {
-  shellWindow = new BrowserWindow({
+/** Current node shown in one window (for its settings dialog). */
+function currentFor(st) {
+  if (st.activeViewId === 'local') {
+    return local ? { type: 'local', name: '本机实例', url: local.url, id: null } : { type: null }
+  }
+  if (st.activeViewId !== null) {
+    const instance = registry?.find(st.activeViewId)
+    if (instance !== undefined) return { type: 'remote', name: instance.name, url: instance.url, id: instance.id }
+  }
+  return { type: null }
+}
+
+/** Load a node into one window's view (connect in THAT window). */
+async function connectNode(st, id, url, name, key) {
+  const view = showView(st, id)
+  if (key) {
+    const session = await ensureGatewaySession(url, key)
+    if (session.ok) await setViewCookie(view, url, session.cookie)
+  }
+  if (!view.webContents.getURL().startsWith(url)) void view.webContents.loadURL(url).catch(() => {})
+  st.win.webContents.send('connection:changed', { name: name || 'dsh' })
+}
+
+// ---- settings dialog (per window) ----
+function layoutDialogView(st) {
+  if (!st.win || !st.dialogView) return
+  const [width, height] = st.win.getContentSize()
+  st.dialogView.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
+}
+
+function ensureDialogView(st) {
+  if (st.dialogView === null || st.dialogView === undefined) {
+    st.dialogView = new WebContentsView({
+      webPreferences: {
+        preload: path.join(ROOT, 'preload.js'),
+        contextIsolation: true,
+        sandbox: true,
+      },
+    })
+    st.dialogView.setBackgroundColor('#00000000')
+    st.win.contentView.addChildView(st.dialogView)
+    st.dialogView.setVisible(false)
+    layoutDialogView(st)
+    attachDevTools(st.dialogView.webContents)
+  }
+  return st.dialogView
+}
+
+function openSettings(st) {
+  const view = ensureDialogView(st)
+  st.win.contentView.removeChildView(view)
+  st.win.contentView.addChildView(view)
+  view.webContents.loadFile(SETTINGS_HTML).then(() => {
+    if (lastThemeTokens) view.webContents.send('theme:sync', lastThemeTokens)
+  })
+  view.setVisible(true)
+}
+
+function closeSettings(st) {
+  st.dialogView?.setVisible(false)
+}
+
+function createAppWindow() {
+  const win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 800,
     minHeight: 560,
     title: 'dsh app',
-    // Windows-native window controls rendered by the OS (VS Code style):
-    // standard minimize/maximize/close that can never look off-brand.
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#151517',
@@ -398,38 +374,19 @@ function createWindow() {
       sandbox: true,
     },
   })
-  shellWindow.loadFile(SHELL_HTML)
-  attachDevTools(shellWindow.webContents)
-
-  // Forward sampled theme tokens ONLY from the currently shown view (hidden
-  // views keep sampling but must not override the visible page's palette).
-  // The last palette is cached and also pushed to the settings dialog, so it
-  // always matches the connected dsh theme instead of the system default.
-  ipcMain.on('theme:changed', (event, tokens) => {
-    const active = activeViewId ? views.get(activeViewId) : undefined
-    if (active === undefined || event.sender !== active.webContents) return
-    console.log(`[theme] synced ${Object.keys(tokens).length} tokens`)
-    lastThemeTokens = tokens
-    const bg = tokens['--dsw-alias-bg-base']
-    const fg = tokens['--dsw-alias-label-primary']
-    if (shellWindow && typeof bg === 'string' && typeof fg === 'string') {
-      shellWindow.setTitleBarOverlay({
-        color: rgbToHex(bg),
-        symbolColor: rgbToHex(fg),
-        height: TITLEBAR_HEIGHT,
-      })
-    }
-    shellWindow?.webContents.send('theme:sync', tokens)
-    dialogView?.webContents.send('theme:sync', tokens)
+  win.loadFile(SHELL_HTML)
+  attachDevTools(win.webContents)
+  const st = { win, views: new Map(), activeViewId: null, dialogView: null }
+  appWindows.set(win.id, st)
+  win.on('resize', () => {
+    layoutViews(st)
+    layoutDialogView(st)
   })
-
-  shellWindow.on('resize', layoutViews)
-  shellWindow.on('maximize', () => shellWindow?.webContents.send('win:maximized-changed', true))
-  shellWindow.on('unmaximize', () => shellWindow?.webContents.send('win:maximized-changed', false))
-  shellWindow.on('closed', () => { shellWindow = null })
+  win.on('closed', () => appWindows.delete(win.id))
+  return st
 }
 
-// ---- ipc (launcher only; preload gates on file: origin) ----
+// ---- ipc ----
 ipcMain.handle('local:start', () => startLocal())
 ipcMain.handle('local:stop', () => { stopLocal(); return { ok: true } })
 ipcMain.handle('local:status', () => local
@@ -437,43 +394,60 @@ ipcMain.handle('local:status', () => local
   : { running: false })
 ipcMain.handle('local:logs', () => local?.logs ?? [])
 
-// Connect the dsh view to a URL (local embedded instance) and show it.
-// Reusing the same view without reload when it already shows that target.
-ipcMain.handle('shell:connect', async (_event, url) => {
+// Open the local instance in the window that asked.
+ipcMain.handle('shell:connect', async (event, url) => {
+  const st = stateOf(event.sender)
+  if (!st) return { ok: false, error: '窗口不可用' }
   const target = String(url)
-  const view = viewFor('local')
-  showView('local')
-  if (!view.webContents.getURL().startsWith(target)) void view.webContents.loadURL(target).catch(() => {})
-  shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
+  await connectNode(st, 'local', target, 'DeepSeek Harness', '')
   shellStore?.set('lastNode', { type: 'local' })
   return { ok: true }
 })
 
-// Refresh the currently shown dsh view.
-ipcMain.handle('view:reload', () => {
-  const active = activeViewId ? views.get(activeViewId) : undefined
-  active?.webContents.reload()
+// Connect a remote instance in the window that asked.
+ipcMain.handle('remote:connect', async (event, id) => {
+  const st = stateOf(event.sender)
+  if (!st) return { ok: false, error: '窗口不可用' }
+  const instance = registry?.find(String(id))
+  if (instance === undefined) return { ok: false, error: '实例不存在' }
+  const key = registry.getSecret(instance.id)
+  if (key === undefined) return { ok: false, error: '未保存访问密钥，请编辑实例补全' }
+  try {
+    await connectNode(st, instance.id, instance.url, instance.name, key)
+    shellStore?.set('lastNode', { type: 'remote', id: instance.id })
+    console.log(`[connect] ok ${instance.url}`)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+// Back to the launcher panel in the window that asked.
+ipcMain.handle('shell:back', (event) => {
+  const st = stateOf(event.sender)
+  if (st) {
+    hideAllViews(st)
+    st.win.webContents.send('shell:backed')
+    st.win.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
+  }
   return { ok: true }
 })
 
-// Back to the launcher panel: hide every view. Embedded process stays alive
-// so re-entering is fast (page + per-instance disk cache kept).
-ipcMain.handle('shell:back', () => {
-  hideAllViews()
-  shellWindow?.webContents.send('shell:backed')
-  shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
+// Open a brand-new window (peer-level, same shell).
+ipcMain.handle('shell:new-window', () => {
+  createAppWindow()
   return { ok: true }
 })
 
-// Remote node connection (direct gateway origin, pre-login session cookie).
-ipcMain.handle('remote:connect', (_event, id) => connectById(String(id)))
-ipcMain.handle('remote:disconnect', () => {
-  hideAllViews()
-  shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
+// Refresh the active view of the window that asked.
+ipcMain.handle('view:reload', (event) => {
+  const st = stateOf(event.sender)
+  if (!st || st.activeViewId === null) return { ok: true }
+  st.views.get(st.activeViewId)?.webContents.reload()
   return { ok: true }
 })
 
-// Remote-node registry (keys stay in the main process; views are redacted).
+ipcMain.handle('remote:disconnect', () => ({ ok: true }))
 ipcMain.handle('remote:list', () => registry?.view() ?? [])
 ipcMain.handle('remote:save', (_event, input) => {
   try {
@@ -483,14 +457,7 @@ ipcMain.handle('remote:save', (_event, input) => {
   }
 })
 ipcMain.handle('remote:remove', (_event, id) => {
-  const instanceId = String(id)
-  const view = views.get(instanceId)
-  if (view) {
-    shellWindow.contentView.removeChildView(view)
-    views.delete(instanceId)
-  }
-  if (activeViewId === instanceId) activeViewId = null
-  registry?.remove(instanceId)
+  registry?.remove(String(id))
   return { ok: true }
 })
 ipcMain.handle('remote:health', async (_event, id) => {
@@ -501,74 +468,18 @@ ipcMain.handle('remote:health', async (_event, id) => {
   return { status: await checkRemoteHealth(instance.url, key) }
 })
 
-// Custom title bar window controls.
-ipcMain.handle('win:minimize', () => { shellWindow?.minimize(); return { ok: true } })
-ipcMain.handle('win:toggle-maximize', () => {
-  if (!shellWindow) return { ok: true }
-  if (shellWindow.isMaximized()) shellWindow.unmaximize()
-  else shellWindow.maximize()
+// Per-window settings dialog.
+ipcMain.handle('settings:open', (event) => {
+  const st = stateOf(event.sender)
+  if (st) openSettings(st)
   return { ok: true }
 })
-ipcMain.handle('win:close', () => { shellWindow?.close(); return { ok: true } })
-ipcMain.handle('win:is-maximized', () => shellWindow?.isMaximized() ?? false)
-
-// ---- settings dialog overlay (transparent WebContentsView above the views) ----
-let dialogView = null
-
-function ensureDialogView() {
-  if (dialogView === null) {
-    dialogView = new WebContentsView({
-      webPreferences: {
-        preload: path.join(ROOT, 'preload.js'),
-        contextIsolation: true,
-        sandbox: true,
-      },
-    })
-    dialogView.setBackgroundColor('#00000000')
-    shellWindow.contentView.addChildView(dialogView)
-    dialogView.setVisible(false)
-    layoutDialogView()
-    attachDevTools(dialogView.webContents)
-  }
-  return dialogView
-}
-
-function layoutDialogView() {
-  if (!shellWindow || !dialogView) return
-  const [width, height] = shellWindow.getContentSize()
-  dialogView.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
-}
-
-function openSettings() {
-  const view = ensureDialogView()
-  // Re-add so the dialog draws above every instance view, then load fresh.
-  shellWindow.contentView.removeChildView(view)
-  shellWindow.contentView.addChildView(view)
-  view.webContents.loadFile(SETTINGS_HTML).then(() => {
-    if (lastThemeTokens) view.webContents.send('theme:sync', lastThemeTokens)
-  })
-  view.setVisible(true)
-}
-
-function closeSettings() {
-  dialogView?.setVisible(false)
-}
-
-/** What the settings dialog should show as the current connection. */
-function currentConnection() {
-  if (activeViewId === 'local') {
-    return local ? { type: 'local', name: '本机实例', url: local.url } : { type: null }
-  }
-  if (activeViewId !== null) {
-    const instance = registry?.find(activeViewId)
-    if (instance !== undefined) return { type: 'remote', name: instance.name, url: instance.url, id: instance.id }
-  }
-  return { type: null }
-}
-
-ipcMain.handle('settings:open', () => { openSettings(); return { ok: true } })
-ipcMain.handle('settings:close', () => { closeSettings(); return { ok: true } })
-ipcMain.handle('settings:current', () => currentConnection())
+ipcMain.handle('settings:close', (event) => {
+  const st = stateOf(event.sender)
+  if (st) closeSettings(st)
+  return { ok: true }
+})
+ipcMain.handle('settings:current', (event) => currentFor(stateOf(event.sender)))
 ipcMain.handle('settings:get-login-item', () => app.getLoginItemSettings().openAtLogin === true)
 ipcMain.handle('settings:set-login-item', (_event, enabled) => {
   app.setLoginItemSettings({ openAtLogin: enabled === true })
@@ -585,49 +496,81 @@ ipcMain.handle('settings:set-auto-local', (_event, enabled) => {
   return { ok: true }
 })
 
+ipcMain.handle('win:minimize', (event) => {
+  stateOf(event.sender)?.win.minimize()
+  return { ok: true }
+})
+ipcMain.handle('win:toggle-maximize', (event) => {
+  const win = stateOf(event.sender)?.win
+  if (!win) return { ok: true }
+  if (win.isMaximized()) win.unmaximize()
+  else win.maximize()
+  return { ok: true }
+})
+ipcMain.handle('win:close', (event) => {
+  stateOf(event.sender)?.win.close()
+  return { ok: true }
+})
+ipcMain.handle('win:is-maximized', (event) => stateOf(event.sender)?.win.isMaximized() ?? false)
+
+// ---- theme sync (per window) ----
+ipcMain.on('theme:changed', (event, tokens) => {
+  const st = stateOf(event.sender)
+  if (!st) return
+  lastThemeTokens = tokens
+  const bg = tokens['--dsw-alias-bg-base']
+  const fg = tokens['--dsw-alias-label-primary']
+  if (typeof bg === 'string' && typeof fg === 'string') {
+    st.win.setTitleBarOverlay({
+      color: rgbToHex(bg),
+      symbolColor: rgbToHex(fg),
+      height: TITLEBAR_HEIGHT,
+    })
+  }
+  st.win.webContents.send('theme:sync', tokens)
+  st.dialogView?.webContents.send('theme:sync', tokens)
+})
+
 // ---- lifecycle ----
 app.whenReady().then(() => {
   registry = createRegistry(app.getPath('userData'), safeStorage)
   shellStore = createStore(app.getPath('userData'))
-  createWindow()
+  const main = createAppWindow()
+
+  const enterLocal = async (st) => {
+    const result = await startLocal()
+    if (result.ok) {
+      await connectNode(st, 'local', result.url, 'DeepSeek Harness', '')
+    }
+  }
+
   if (process.env.DSH_AUTOSTART === '1') {
-    // DSH_REMOTE_URL [+ DSH_REMOTE_KEY] boots straight into a remote node;
-    // otherwise boot the embedded local instance.
     if (process.env.DSH_REMOTE_URL) {
-      connectRemote(process.env.DSH_REMOTE_URL, process.env.DSH_REMOTE_KEY ?? '').then((result) => {
-        console.log(`[remote] ${result.ok ? `connected ${result.url}` : `failed: ${result.error}`}`)
-      })
+      const key = process.env.DSH_REMOTE_KEY ?? ''
+      connectNode(main, 'adhoc', process.env.DSH_REMOTE_URL, new URL(process.env.DSH_REMOTE_URL).host, key)
+        .then(() => console.log('[remote] connected'))
     } else {
-      startLocal().then(async (result) => {
-        if (result.ok) {
-          const view = showView('local')
-          await view.webContents.loadURL(result.url).catch(() => {})
-        }
-      })
+      void enterLocal(main)
     }
   } else {
-    // Background-boot the embedded local instance when enabled (no entry —
-    // "打开界面" then is instant), independent of restore-last-node.
     if (shellStore.get('autoStartLocal') === true) {
       startLocal().then((result) => {
         if (result.ok) console.log(`[auto-local] running ${result.url}`)
       })
     }
-    // Restore the last connected node on launch.
     if (shellStore.get('restoreLastNode') === true) {
       const last = shellStore.get('lastNode')
       if (last?.type === 'remote' && typeof last.id === 'string') {
-        connectById(last.id).then((result) => {
-          console.log(`[restore] ${result.ok ? `connected ${result.url}` : `failed: ${result.error}`}`)
-        })
-      } else if (last?.type === 'local') {
-        startLocal().then(async (result) => {
-          if (result.ok) {
-            const view = showView('local')
-            await view.webContents.loadURL(result.url).catch(() => {})
-            console.log('[restore] local connected')
+        const instance = registry?.find(last.id)
+        if (instance) {
+          const key = registry.getSecret(instance.id)
+          if (key) {
+            connectNode(main, instance.id, instance.url, instance.name, key)
+              .then(() => console.log(`[restore] connected ${instance.url}`))
           }
-        })
+        }
+      } else if (last?.type === 'local') {
+        void enterLocal(main)
       }
     }
   }

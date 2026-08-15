@@ -25,6 +25,7 @@ if (isLauncher) {
     // view switching (launcher <-> connected dsh web)
     connect: (url) => ipcRenderer.invoke('shell:connect', url),
     back: () => ipcRenderer.invoke('shell:back'),
+    newWindow: () => ipcRenderer.invoke('shell:new-window'),
     reload: () => ipcRenderer.invoke('view:reload'),
     onConnectionChanged: (callback) => {
       const listener = (_event, detail) => callback(detail)
