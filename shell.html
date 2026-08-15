@@ -469,6 +469,10 @@
             <span class="label">启动时自动开启本机实例</span>
             <button id="auto-local-toggle" class="toggle" role="switch" aria-checked="false" title="应用启动时自动运行内嵌 dsh（不自动进入）"></button>
           </div>
+          <div class="behavior" style="padding:0 0 10px">
+            <span class="label">启动时恢复上次连接</span>
+            <button id="restore-toggle" class="toggle" role="switch" aria-checked="false" title="下次启动自动打开上次连接的节点"></button>
+          </div>
           <div class="actions">
             <button id="start" class="btn primary">启动内嵌 dsh</button>
             <button id="stop" class="btn ghost" disabled>停止</button>
@@ -481,10 +485,6 @@
         <section class="section remote">
           <div class="row-title">远程节点 <button id="remote-add" class="btn sm outline">添加实例</button></div>
           <p class="meta">连接远程 dsh（经网关，访问密钥注入）；可添加、保存、切换多个节点。</p>
-          <div class="behavior" style="padding:2px 0 10px">
-            <span class="label">启动时恢复上次连接</span>
-            <button id="restore-toggle" class="toggle" role="switch" aria-checked="false" title="下次启动自动打开上次连接的节点"></button>
-          </div>
           <p class="error" id="remote-error" style="min-height:0;margin:0 0 8px"></p>
           <span class="search">
             <span class="search-icon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg></span>

@@ -538,6 +538,9 @@ app.whenReady().then(() => {
   const main = createAppWindow()
 
   const enterLocal = async (st) => {
+    // Show the view immediately (dark loading ground) so restoring the local
+    // instance never sits on the launcher while dsh boots.
+    showView(st, 'local')
     const result = await startLocal()
     if (result.ok) {
       await connectNode(st, 'local', result.url, 'DeepSeek Harness', '')
