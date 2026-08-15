@@ -24,6 +24,8 @@ const TOKENS = [
   '--dsw-alias-button-primary-hover',
   '--dsw-alias-button-ghost-active-fill',
   '--dsw-alias-button-ghost-active-border',
+  '--dsw-alias-scrollbar-bg-l1',
+  '--dsw-alias-scrollbar-hover-l1',
   '--dsw-alias-state-error-primary',
   '--dsw-alias-state-success-primary',
 ]

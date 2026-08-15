@@ -25,6 +25,8 @@
         --shell-brand-hover: rgb(67, 69, 74);
         --shell-ghost-fill: rgb(235, 238, 242);
         --shell-ghost-border: rgb(151, 157, 166);
+        --shell-scrollbar-thumb: rgb(229, 229, 229);
+        --shell-scrollbar-thumb-hover: rgb(212, 212, 212);
         --shell-danger: rgb(236, 19, 19);
         --shell-success: rgb(34, 197, 94);
       }
@@ -44,12 +46,30 @@
           --shell-brand-hover: rgb(235, 238, 242);
           --shell-ghost-fill: rgb(67, 69, 74);
           --shell-ghost-border: rgb(129, 133, 140);
+          --shell-scrollbar-thumb: rgb(60, 60, 61);
+          --shell-scrollbar-thumb-hover: rgb(84, 85, 87);
           --shell-danger: rgb(242, 90, 90);
           --shell-success: rgb(34, 197, 94);
         }
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
+
+      /* dsh scrollbar skin (mirrors ui-theme scrollbar.css): 8px slim bar,
+         transparent track, 4px-radius thumb, hover deepens. */
+      :root {
+        --dsh-scrollbar-thumb: var(--shell-scrollbar-thumb);
+        --dsh-scrollbar-thumb-hover: var(--shell-scrollbar-thumb-hover);
+      }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--dsh-scrollbar-thumb); }
+      ::-webkit-scrollbar-thumb:hover { background: var(--dsh-scrollbar-thumb-hover); }
+      ::-webkit-scrollbar-corner { background: transparent; }
+      @supports not selector(::-webkit-scrollbar) {
+        body, body * { scrollbar-width: thin; scrollbar-color: var(--dsh-scrollbar-thumb) transparent; }
+      }
+
       html, body { height: 100%; margin: 0; }
       body {
         background: var(--shell-bg);
@@ -339,6 +359,7 @@
         <section class="section">
           <div class="row-title">远程节点 <button id="remote-add" class="btn sm outline">添加实例</button></div>
           <p class="meta">连接远程 dsh（经网关，访问密钥注入）；可添加、保存、切换多个节点。</p>
+          <input id="remote-search" class="field" placeholder="搜索实例（名称 / 地址）" spellcheck="false" style="margin-bottom:4px" />
           <div id="remote-list"></div>
           <div id="remote-form" class="remote-form" hidden>
             <div class="field-row">
@@ -373,6 +394,8 @@
         '--dsw-alias-button-primary-hover': '--shell-brand-hover',
         '--dsw-alias-button-ghost-active-fill': '--shell-ghost-fill',
         '--dsw-alias-button-ghost-active-border': '--shell-ghost-border',
+        '--dsw-alias-scrollbar-bg-l1': '--shell-scrollbar-thumb',
+        '--dsw-alias-scrollbar-hover-l1': '--shell-scrollbar-thumb-hover',
         '--dsw-alias-state-error-primary': '--shell-danger',
         '--dsw-alias-state-success-primary': '--shell-success',
       }
@@ -499,10 +522,38 @@
         else rfError.textContent = r.error || '连接失败'
       }
 
+      const remoteSearch = document.getElementById('remote-search')
+      const healthCache = new Map() // instanceId -> { status, at } (30s TTL)
+
+      function applyHealth(dot, status) {
+        dot.className = status === 'online' ? 'dot done'
+          : status === 'unauthorized' ? 'dot danger'
+          : 'dot'
+        dot.title = status === 'online' ? '在线'
+          : status === 'unauthorized' ? '密钥无效'
+          : '离线'
+      }
+
+      async function refreshHealth(id, dot) {
+        const cached = healthCache.get(id)
+        if (cached && Date.now() - cached.at < 30_000) {
+          applyHealth(dot, cached.status)
+          return
+        }
+        const h = await window.dshShell.remote.health(id)
+        healthCache.set(id, { status: h.status, at: Date.now() })
+        applyHealth(dot, h.status)
+      }
+
       async function renderRemoteList() {
+        const query = remoteSearch.value.trim().toLowerCase()
         const instances = await window.dshShell.remote.list()
         remoteList.textContent = ''
-        for (const inst of instances) {
+        const matches = query
+          ? instances.filter((inst) =>
+              inst.name.toLowerCase().includes(query) || inst.url.toLowerCase().includes(query))
+          : instances
+        for (const inst of matches) {
           const row = document.createElement('div')
           row.className = 'instance-row'
 
@@ -545,17 +596,17 @@
           row.appendChild(actions)
 
           remoteList.appendChild(row)
-
-          window.dshShell.remote.health(inst.id).then((h) => {
-            healthDot.className = h.status === 'online' ? 'dot done'
-              : h.status === 'unauthorized' ? 'dot danger'
-              : 'dot'
-            healthDot.title = h.status === 'online' ? '在线'
-              : h.status === 'unauthorized' ? '密钥无效'
-              : '离线'
-          })
+          void refreshHealth(inst.id, healthDot)
+        }
+        if (remoteList.children.length === 0) {
+          const empty = document.createElement('p')
+          empty.className = 'hint'
+          empty.textContent = query ? '没有匹配的实例' : '还没有远程实例，点击上方"添加实例"'
+          remoteList.appendChild(empty)
         }
       }
+
+      remoteSearch.addEventListener('input', () => renderRemoteList())
 
       function openRemoteForm(inst) {
         editingId = inst?.id ?? null
