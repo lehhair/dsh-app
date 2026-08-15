@@ -82,12 +82,22 @@ public class DshNativePlugin extends Plugin {
             }, "DshNativeBridge");
 
             // Push the page down below the (transparent, edge-to-edge)
-            // status bar so dsh's own content is never covered by it.
+            // status bar so dsh's own content is never covered by it. The
+            // webview itself gets a top margin equal to the status bar
+            // height (the Capawesome edge-to-edge pattern: margin, not
+            // padding — padding would shrink the page viewport).
             androidx.core.view.OnApplyWindowInsetsListener insetsListener = (view, insets) -> {
                 androidx.core.graphics.Insets bars = insets.getInsets(
-                    androidx.core.view.WindowInsetsCompat.Type.systemBars());
-                view.setPadding(0, bars.top, 0, bars.bottom);
-                return insets;
+                    androidx.core.view.WindowInsetsCompat.Type.systemBars()
+                        | androidx.core.view.WindowInsetsCompat.Type.displayCutout());
+                ViewGroup.MarginLayoutParams mlp =
+                    (ViewGroup.MarginLayoutParams) view.getLayoutParams();
+                mlp.topMargin = bars.top;
+                mlp.leftMargin = bars.left;
+                mlp.rightMargin = bars.right;
+                mlp.bottomMargin = bars.bottom;
+                view.setLayoutParams(mlp);
+                return androidx.core.view.WindowInsetsCompat.CONSUMED;
             };
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(wv, insetsListener);
 
@@ -99,6 +109,9 @@ public class DshNativePlugin extends Plugin {
                 cm.setAcceptCookie(true);
                 cm.setCookie(url, cookieName + "=" + cookieValue + "; Path=/; Max-Age=604800");
                 cm.flush();
+                android.util.Log.i("DshNative", "cookie injected: " + cookieName + "=" + cookieValue.substring(0, Math.min(12, cookieValue.length())) + "... (" + cookieValue.length() + " chars)");
+            } else {
+                android.util.Log.i("DshNative", "no cookie to inject (login returned none)");
             }
 
             // The gateway accepts Bearer <key> directly (verified: 200), a
@@ -107,6 +120,9 @@ public class DshNativePlugin extends Plugin {
                 @Override
                 public void onPageFinished(WebView view, String pageUrl) {
                     super.onPageFinished(view, pageUrl);
+                    // Log where the page landed — still on the login path
+                    // means the cookie/header auth did not take.
+                    android.util.Log.i("DshNative", "page finished: " + pageUrl);
                     // Inject the back-button script on every finished load
                     // (the settings panel re-mounts between navigations).
                     if (injectScript != null && !injectScript.isEmpty()) {
@@ -200,9 +216,11 @@ public class DshNativePlugin extends Plugin {
                 if (cookie != null) {
                     result.put("ok", true);
                     result.put("cookie", cookie);
+                    android.util.Log.i("DshNative", "login ok, cookie len=" + cookie.length());
                 } else {
                     result.put("ok", false);
                     result.put("error", "登录未返回会话 Cookie（检查访问密钥，HTTP " + code + "）");
+                    android.util.Log.w("DshNative", "login no cookie, http=" + code);
                 }
                 call.resolve(result);
             } catch (Exception e) {
