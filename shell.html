@@ -66,6 +66,13 @@
       ::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--dsh-scrollbar-thumb); }
       ::-webkit-scrollbar-thumb:hover { background: var(--dsh-scrollbar-thumb-hover); }
       ::-webkit-scrollbar-corner { background: transparent; }
+      /* Auto-hide on the remote list: thumb appears only while scrolling or
+         hovered, fades out 500ms after the last scroll (JS adds .scrolling). */
+      .remote-list::-webkit-scrollbar-thumb { background: transparent; transition: background-color 0.2s ease; }
+      .remote-list:hover::-webkit-scrollbar-thumb,
+      .remote-list.scrolling::-webkit-scrollbar-thumb { background: var(--dsh-scrollbar-thumb); }
+      .remote-list:hover::-webkit-scrollbar-thumb:hover,
+      .remote-list.scrolling::-webkit-scrollbar-thumb:hover { background: var(--dsh-scrollbar-thumb-hover); }
       @supports not selector(::-webkit-scrollbar) {
         body, body * { scrollbar-width: thin; scrollbar-color: var(--dsh-scrollbar-thumb) transparent; }
       }
@@ -527,6 +534,13 @@
 
       // ---- remote node registry: add / save / switch ----
       const remoteList = document.getElementById('remote-list')
+      // auto-hide scrollbar: visible while scrolling, fades 500ms after stop
+      let scrollHideTimer = null
+      remoteList.addEventListener('scroll', () => {
+        remoteList.classList.add('scrolling')
+        clearTimeout(scrollHideTimer)
+        scrollHideTimer = setTimeout(() => remoteList.classList.remove('scrolling'), 500)
+      })
       const remoteAddBtn = document.getElementById('remote-add')
       const remoteForm = document.getElementById('remote-form')
       const rfName = document.getElementById('rf-name')
