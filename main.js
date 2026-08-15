@@ -488,14 +488,6 @@ ipcMain.handle('remote:remove', (_event, id) => {
   registry?.remove(instanceId)
   return { ok: true }
 })
-ipcMain.handle('remote:set-default', (_event, id) => {
-  try {
-    registry?.setDefault(String(id))
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
-})
 ipcMain.handle('remote:health', async (_event, id) => {
   const instance = registry?.find(String(id))
   if (instance === undefined) return { status: 'offline' }

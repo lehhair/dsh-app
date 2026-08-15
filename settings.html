@@ -341,12 +341,6 @@
           const name = document.createElement('div')
           name.className = 'name'
           name.textContent = inst.name
-          if (inst.isDefault) {
-            const pill = document.createElement('span')
-            pill.className = 'pill on'
-            pill.textContent = '默认'
-            name.appendChild(pill)
-          }
           const url = document.createElement('div')
           url.className = 'url'
           url.textContent = inst.url

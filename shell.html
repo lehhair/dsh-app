@@ -686,12 +686,6 @@
           const name = document.createElement('span')
           name.textContent = inst.name
           line1.appendChild(name)
-          if (inst.isDefault) {
-            const pill = document.createElement('span')
-            pill.className = 'pill'
-            pill.textContent = '默认'
-            line1.appendChild(pill)
-          }
           row.appendChild(line1)
 
           const meta = document.createElement('p')
@@ -702,12 +696,6 @@
           const actions = document.createElement('div')
           actions.className = 'actions'
           actions.appendChild(makeBtn('连接', 'primary sm', () => connectRemoteById(inst.id)))
-          const defaultBtn = makeBtn(inst.isDefault ? '默认' : '设为默认', 'ghost sm', async () => {
-            await window.dshShell.remote.setDefault(inst.id)
-            renderRemoteList()
-          })
-          defaultBtn.disabled = inst.isDefault
-          actions.appendChild(defaultBtn)
           actions.appendChild(makeBtn('编辑', 'ghost sm', () => openRemoteForm(inst)))
           actions.appendChild(makeBtn('删除', 'ghost sm', async () => {
             await window.dshShell.remote.remove(inst.id)

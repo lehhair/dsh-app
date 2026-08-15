@@ -38,7 +38,6 @@ if (isLauncher) {
       list: () => ipcRenderer.invoke('remote:list'),
       save: (input) => ipcRenderer.invoke('remote:save', input),
       remove: (id) => ipcRenderer.invoke('remote:remove', id),
-      setDefault: (id) => ipcRenderer.invoke('remote:set-default', id),
       health: (id) => ipcRenderer.invoke('remote:health', id),
     },
     // settings dialog window + shell behavior

@@ -77,7 +77,7 @@ function createRegistry(userDataPath, safeStorage) {
 
     const instance = existing
       ? { ...existing, name, url }
-      : { id: crypto.randomUUID(), name, url, isDefault: instances.length === 0 }
+      : { id: crypto.randomUUID(), name, url }
     if (existing === undefined) instances.push(instance)
     else Object.assign(existing, { name, url })
 
@@ -102,14 +102,6 @@ function createRegistry(userDataPath, safeStorage) {
     writeJson(keysFile, keys)
   }
 
-  /** Mark one instance as the default (clears others). */
-  function setDefault(id) {
-    if (find(id) === undefined) throw new Error('实例不存在')
-    const doc = readJson(instancesFile, { instances: [] })
-    for (const instance of doc.instances ?? []) instance.isDefault = instance.id === id
-    writeJson(instancesFile, doc)
-  }
-
   /** Public view of all instances (with keyConfigured flag). */
   function view() {
     return list().map((instance) => ({
@@ -118,7 +110,7 @@ function createRegistry(userDataPath, safeStorage) {
     }))
   }
 
-  return { list, find, hasKey, getSecret, save, remove, setDefault, view }
+  return { list, find, hasKey, getSecret, save, remove, view }
 }
 
 module.exports = { createRegistry }
