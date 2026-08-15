@@ -1,8 +1,8 @@
 {
-  "name": "dsh-desktop",
+  "name": "dsh-app",
   "version": "0.1.0",
   "private": true,
-  "description": "dsh desktop shell: embedded dsh runtime via Electron's Node, plus remote dsh node support",
+  "description": "dsh app shell: embedded dsh runtime via bundled official Node, plus remote dsh node support",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

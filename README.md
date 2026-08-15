@@ -1,11 +1,11 @@
-# dsh-desktop
+# dsh-app
 
 DeepSeek Harness 桌面壳：深度内嵌 dsh 运行时（PC），渲染内容与 dsh web 完全一致。
 
 ## 架构
 
 ```
-dsh-desktop (Electron 43)
+dsh-app (Electron 43)
 ├─ resources/node.exe         官方 Node 24（打包时放入；dev 用系统 PATH 里的 node）
 ├─ .dsh-runtime/              npm 包 @deepseek-ai/dsh（内嵌 dsh 运行时，可重装）
 ├─ main.js                    壳主进程：随机端口 / spawn dsh / health / 杀进程树 / 窗口 / ipc

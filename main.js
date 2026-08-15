@@ -1,4 +1,4 @@
-// dsh-desktop main process: the Electron shell owns windows, process
+// dsh-app main process: the Electron shell owns windows, process
 // lifecycle, and the launcher; the embedded dsh runtime runs under the
 // bundled OFFICIAL node.exe (never Electron's Node — dsh needs Node's
 // internal ESM loader API `getOrInitializeCascadedLoader` to resolve
@@ -135,7 +135,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
-    title: 'dsh desktop',
+    title: 'dsh app',
     backgroundColor: '#151517',
     webPreferences: {
       preload: path.join(ROOT, 'preload.js'),
