@@ -386,6 +386,10 @@ function viewFor(st, id) {
         preload: path.join(ROOT, 'view-preload.js'),
         contextIsolation: true,
         sandbox: true,
+        // Sandboxed preloads get no process.env — pass flags via argv.
+        additionalArguments: [
+          ...(process.env.DSH_INJECT_SETTINGS === '1' ? ['--dsh-inject-settings'] : []),
+        ],
       },
     })
     view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#151517' : '#f9fafb')
