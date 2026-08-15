@@ -7,7 +7,7 @@
 // internal ESM loader API `getOrInitializeCascadedLoader` to resolve
 // profile-installed plugins, which Electron's patched kernel lacks).
 
-const { app, BrowserWindow, WebContentsView, ipcMain, safeStorage, nativeTheme } = require('electron')
+const { app, BrowserWindow, WebContentsView, ipcMain, safeStorage, nativeTheme, screen } = require('electron')
 const path = require('node:path')
 const { spawn, exec } = require('node:child_process')
 const http = require('node:http')
@@ -366,9 +366,42 @@ function closeSettings(st) {
 }
 
 function createAppWindow() {
+  // Each window owns a numbered state slot (1, 2, 3…) so peer windows keep
+  // their own size/position across launches. The slot is the smallest number
+  // not currently in use — closing window 1 then reopening reuses slot 1, so
+  // the primary window's saved bounds come back with it. Bounds are validated
+  // against the current display layout — a monitor that went away must not
+  // strand the window off-screen.
+  const usedSlots = new Set([...appWindows.values()].map((s) => s.slot))
+  let slot = 1
+  while (usedSlots.has(slot)) slot++
+  const saved = shellStore?.get(`winState.${slot}`)
+  const bounds = (() => {
+    if (!saved || typeof saved.width !== 'number' || typeof saved.height !== 'number') return null
+    if (typeof saved.x !== 'number' || typeof saved.y !== 'number') return null
+    const displays = screen.getAllDisplays()
+    const onScreen = displays.some((d) => {
+      const a = d.workArea
+      // Require a meaningful overlap (title bar reachable) instead of any
+      // corner touch, so a mostly-off-screen window is treated as stale.
+      const overlapW = Math.min(saved.x + saved.width, a.x + a.width) - Math.max(saved.x, a.x)
+      const overlapH = Math.min(saved.y + saved.height, a.y + a.height) - Math.max(saved.y, a.y)
+      return overlapW >= 80 && overlapH >= 40
+    })
+    if (!onScreen) return null
+    return {
+      x: saved.x,
+      y: saved.y,
+      width: Math.max(saved.width, 800),
+      height: Math.max(saved.height, 560),
+      maximized: saved.maximized === true,
+    }
+  })()
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: bounds?.width ?? 1440,
+    height: bounds?.height ?? 900,
+    x: bounds?.x,
+    y: bounds?.y,
     minWidth: 800,
     minHeight: 560,
     title: 'dsh app',
@@ -386,13 +419,36 @@ function createAppWindow() {
       sandbox: true,
     },
   })
+  if (bounds?.maximized) win.maximize()
   win.loadFile(SHELL_HTML)
   attachDevTools(win.webContents)
-  const st = { win, views: new Map(), activeViewId: null, dialogView: null }
+  const st = { win, views: new Map(), activeViewId: null, dialogView: null, slot }
   appWindows.set(win.id, st)
+  // Persist size/position (debounced; immediate on close). getNormalBounds
+  // returns the restored bounds even while maximized, so the slot always
+  // records the user's preferred size, not the maximized fill.
+  const persistWindowState = () => {
+    if (!shellStore || win.isDestroyed()) return
+    const b = win.getNormalBounds()
+    shellStore.set(`winState.${slot}`, {
+      x: b.x, y: b.y, width: b.width, height: b.height,
+      maximized: win.isMaximized(),
+    })
+  }
+  let stateTimer = null
   win.on('resize', () => {
     layoutViews(st)
     layoutDialogView(st)
+    clearTimeout(stateTimer)
+    stateTimer = setTimeout(persistWindowState, 400)
+  })
+  win.on('move', () => {
+    clearTimeout(stateTimer)
+    stateTimer = setTimeout(persistWindowState, 400)
+  })
+  win.on('close', () => {
+    clearTimeout(stateTimer)
+    persistWindowState()
   })
   win.on('closed', () => appWindows.delete(win.id))
   return st
