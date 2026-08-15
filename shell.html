@@ -385,7 +385,7 @@
   </head>
   <body>
     <header class="titlebar">
-      <button id="settings" class="win-btn settings" title="设置" hidden>
+      <button id="settings" class="win-btn settings" title="设置">
         <svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
     <g clipPath="url(#shell-icon-settings-clip)">
       <path
@@ -404,7 +404,7 @@
     </defs>
   </svg>
       </button>
-      <button id="reload" class="win-btn" title="刷新" hidden>
+      <button id="reload" class="win-btn" title="刷新">
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.92136 0.349152C10.3744 0.349234 12.5564 1.5052 13.9557 3.29894L15.1281 2.12759C15.3303 1.92546 15.6767 2.06943 15.6767 2.35538V5.53923C15.6766 5.71626 15.5329 5.85976 15.3559 5.86002H12.171C11.8854 5.8597 11.7426 5.51465 11.9443 5.31249L12.9641 4.29056C11.8237 2.74305 9.98908 1.74106 7.92136 1.74097C4.46436 1.74097 1.66233 4.543 1.66233 8C1.66233 11.457 4.46436 14.259 7.92136 14.259C11.3782 14.2589 14.1804 11.4569 14.1804 8H15.5722C15.5722 12.2251 12.1465 15.6507 7.92136 15.6508C3.69614 15.6508 0.270508 12.2252 0.270508 8C0.270508 3.77478 3.69614 0.349152 7.92136 0.349152Z"/></svg>
       </button>
       <span class="status" id="title-status">DeepSeek Harness</span>
@@ -572,11 +572,7 @@
 
       openBtn.addEventListener('click', async () => {
         if (!current) return
-        const r = await window.dshShell.connect(current.url)
-        if (r.ok) {
-          settingsBtn.hidden = false
-          reloadBtn.hidden = false
-        }
+        await window.dshShell.connect(current.url)
       })
 
       // title-bar refresh reloads the currently shown dsh page
@@ -612,10 +608,7 @@
       async function connectRemoteById(id) {
         remoteError.textContent = ''
         const r = await window.dshShell.remote.connect(id)
-        if (r.ok) {
-          settingsBtn.hidden = false
-          reloadBtn.hidden = false
-        } else remoteError.textContent = r.error || '连接失败'
+        if (!r.ok) remoteError.textContent = r.error || '连接失败'
       }
 
       const remoteSearch = document.getElementById('remote-search')
@@ -758,12 +751,8 @@
 
       window.dshShell.onExited(() => {
         setState('idle')
-        settingsBtn.hidden = true
-        reloadBtn.hidden = true
       })
       window.dshShell.onBacked(() => {
-        settingsBtn.hidden = true
-        reloadBtn.hidden = true
         titleStatus.textContent = 'DeepSeek Harness'
       })
       window.dshShell.onConnectionChanged((detail) => {
