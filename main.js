@@ -337,11 +337,13 @@ function viewFor(id) {
         sandbox: true,
       },
     })
+    // Register BEFORE layoutViews: it iterates the Map to size each view,
+    // so a not-yet-registered view would keep 0x0 bounds and never show.
+    views.set(id, view)
     shellWindow.contentView.addChildView(view)
     view.setVisible(false)
     layoutViews()
     attachDevTools(view.webContents)
-    views.set(id, view)
   }
   return view
 }
