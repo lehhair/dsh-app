@@ -23,6 +23,8 @@
         --shell-brand-hover: rgb(67, 69, 74);
         --shell-danger: rgb(236, 19, 19);
         --shell-success: rgb(34, 197, 94);
+        --shell-scrollbar-thumb: rgb(229, 229, 229);
+        --shell-scrollbar-thumb-hover: rgb(212, 212, 212);
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -39,10 +41,32 @@
           --shell-brand-hover: rgb(235, 238, 242);
           --shell-danger: rgb(242, 90, 90);
           --shell-success: rgb(34, 197, 94);
+          --shell-scrollbar-thumb: rgb(60, 60, 61);
+          --shell-scrollbar-thumb-hover: rgb(84, 85, 87);
         }
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
+
+      /* dsh scrollbar skin (mirrors ui-theme scrollbar.css) */
+      :root {
+        --dsh-scrollbar-thumb: var(--shell-scrollbar-thumb);
+        --dsh-scrollbar-thumb-hover: var(--shell-scrollbar-thumb-hover);
+      }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--dsh-scrollbar-thumb); }
+      ::-webkit-scrollbar-thumb:hover { background: var(--dsh-scrollbar-thumb-hover); }
+      ::-webkit-scrollbar-corner { background: transparent; }
+      /* auto-hide on the instance list: visible while scrolling/hovered */
+      .dialog-scroll::-webkit-scrollbar-thumb { background: transparent; transition: background-color 0.2s ease; }
+      .dialog-scroll:hover::-webkit-scrollbar-thumb,
+      .dialog-scroll.scrolling::-webkit-scrollbar-thumb { background: var(--dsh-scrollbar-thumb); }
+      .dialog-scroll:hover::-webkit-scrollbar-thumb:hover,
+      .dialog-scroll.scrolling::-webkit-scrollbar-thumb:hover { background: var(--dsh-scrollbar-thumb-hover); }
+      @supports not selector(::-webkit-scrollbar) {
+        body, body * { scrollbar-width: thin; scrollbar-color: var(--dsh-scrollbar-thumb) transparent; }
+      }
       html, body { height: 100%; margin: 0; background: transparent; }
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -114,6 +138,20 @@
         border-top: 1px solid var(--shell-border);
       }
       .group-title { font-size: 12px; font-weight: 500; color: var(--shell-fg-tertiary); margin: 14px 0 8px; }
+
+      /* search field with leading magnifier (launcher-consistent) */
+      .search-wrap { position: relative; margin-bottom: 6px; }
+      .search-wrap svg {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 14px;
+        height: 14px;
+        color: var(--shell-fg-tertiary);
+        pointer-events: none;
+      }
+      .search-wrap .field { padding-left: 32px; margin-bottom: 0; }
       .group:first-child .group-title { margin-top: 2px; }
 
       .current {
@@ -278,7 +316,10 @@
 
       <div class="dialog-scroll">
         <div class="group-title">远程实例</div>
-        <input id="inst-search" class="field" placeholder="搜索实例（名称 / 地址）" spellcheck="false" style="margin-bottom:2px" />
+        <div class="search-wrap">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg>
+          <input id="inst-search" class="field" placeholder="搜索实例（名称 / 地址）" spellcheck="false" />
+        </div>
         <div id="instances"></div>
       </div>
 
@@ -376,6 +417,14 @@
 
       let instanceQuery = ''
       const instSearch = document.getElementById('inst-search')
+      const scrollZone = document.querySelector('.dialog-scroll')
+      // auto-hide scrollbar: visible while scrolling, fades after stop
+      let scrollHideTimer = null
+      scrollZone.addEventListener('scroll', () => {
+        scrollZone.classList.add('scrolling')
+        clearTimeout(scrollHideTimer)
+        scrollHideTimer = setTimeout(() => scrollZone.classList.remove('scrolling'), 500)
+      })
 
       async function renderInstances() {
         const query = instanceQuery
