@@ -12,7 +12,7 @@
 // Embedded run:  node.exe lib/bin.js --patch <overlay> --profile web --port <free>
 // Remote nodes (local proxy injecting Bearer) land in a later phase.
 
-const { app, BrowserWindow, WebContentsView, ipcMain, safeStorage } = require('electron')
+const { app, BrowserWindow, WebContentsView, ipcMain, safeStorage, nativeTheme } = require('electron')
 const path = require('node:path')
 const { spawn, exec } = require('node:child_process')
 const http = require('node:http')
@@ -346,8 +346,10 @@ function viewFor(id) {
     // Register BEFORE layoutViews: it iterates the Map to size each view,
     // so a not-yet-registered view would keep 0x0 bounds and never show.
     views.set(id, view)
-    // Dark ground while a page loads: never a glaring white flash.
-    view.setBackgroundColor('#151517')
+    // Loading ground follows the system theme (dsh pages do the same), so the
+    // pre-content blank matches what the page will paint — never a jarring
+    // dark-on-light or light-on-dark flash.
+    view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#151517' : '#f9fafb')
     shellWindow.contentView.addChildView(view)
     view.setVisible(false)
     layoutViews()
