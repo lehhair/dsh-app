@@ -404,7 +404,8 @@ function createAppWindow() {
     y: bounds?.y,
     minWidth: 800,
     minHeight: 560,
-    title: 'dsh app',
+    title: 'DeepSeek Harness',
+    icon: path.join(ROOT, 'icon.ico'),
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#151517',
@@ -604,6 +605,11 @@ ipcMain.on('theme:changed', (event, tokens) => {
 
 // ---- lifecycle ----
 app.whenReady().then(() => {
+  if (process.platform === 'win32') {
+    // Taskbar grouping + notifications show this name; package.json's `name`
+    // stays `dsh-app` (internal id, not user-facing).
+    app.setAppUserModelId('DeepSeek Harness')
+  }
   registry = createRegistry(app.getPath('userData'), safeStorage)
   shellStore = createStore(app.getPath('userData'))
   const main = createAppWindow()
