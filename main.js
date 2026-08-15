@@ -76,6 +76,13 @@ function killTree(pid) {
   exec(cmd, { windowsHide: true }, () => {})
 }
 
+/** Convert a computed `rgb(r, g, b)` (or `rgba`) string to #rrggbb for setTitleBarOverlay. */
+function rgbToHex(value) {
+  const match = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(value)
+  if (!match) return undefined
+  return `#${[1, 2, 3].map((i) => Number(match[i]).toString(16).padStart(2, '0')).join('')}`
+}
+
 // ---- embedded local instance state ----
 let local = null // { child, port, url, logs: string[] }
 
@@ -151,7 +158,14 @@ function createWindow() {
     minWidth: 800,
     minHeight: 560,
     title: 'dsh app',
-    frame: false,
+    // Windows-native window controls rendered by the OS (VS Code style):
+    // standard minimize/maximize/close that can never look off-brand.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#151517',
+      symbolColor: '#d7dbe0',
+      height: TITLEBAR_HEIGHT,
+    },
     backgroundColor: '#151517',
     webPreferences: {
       preload: path.join(ROOT, 'preload.js'),
@@ -177,9 +191,19 @@ function createWindow() {
   dshView.setVisible(false)
   layoutDshView()
 
-  // Forward sampled theme tokens to the shell UI (theme sync / fusion).
+  // Forward sampled theme tokens to the shell UI (theme sync / fusion),
+  // and keep the OS-rendered window controls on the same palette.
   ipcMain.on('theme:changed', (_event, tokens) => {
     console.log(`[theme] synced ${Object.keys(tokens).length} tokens`)
+    const bg = tokens['--dsw-alias-bg-base']
+    const fg = tokens['--dsw-alias-label-primary']
+    if (shellWindow && typeof bg === 'string' && typeof fg === 'string') {
+      shellWindow.setTitleBarOverlay({
+        color: rgbToHex(bg),
+        symbolColor: rgbToHex(fg),
+        height: TITLEBAR_HEIGHT,
+      })
+    }
     shellWindow?.webContents.send('theme:sync', tokens)
   })
 
