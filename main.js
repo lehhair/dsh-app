@@ -226,10 +226,7 @@ async function connectRemote(rawUrl, rawKey) {
     if (!session.ok) return session
     const view = viewFor('adhoc')
     await setViewCookie(view, url, session.cookie)
-    if (!view.webContents.getURL().startsWith(url)) {
-      await view.webContents.loadURL(url)
-      await waitForFirstPaint(view.webContents)
-    }
+    if (!view.webContents.getURL().startsWith(url)) await view.webContents.loadURL(url)
     showView('adhoc')
     shellWindow?.webContents.send('connection:changed', { name: new URL(url).host })
     return { ok: true, url }
@@ -258,10 +255,9 @@ async function connectById(id) {
     const view = viewFor(id)
     await setViewCookie(view, instance.url, session.cookie)
     const alreadyLoaded = view.webContents.getURL().startsWith(instance.url)
-    if (!alreadyLoaded) {
-      await view.webContents.loadURL(instance.url)
-      await waitForFirstPaint(view.webContents)
-    }
+    if (!alreadyLoaded) await view.webContents.loadURL(instance.url)
+    // Reveal only after did-finish-load: the page's HTML/CSS (and its body
+    // background) are in place, so no white flash — and no artificial delay.
     showView(id)
     shellWindow?.webContents.send('connection:changed', { name: instance.name })
     console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
@@ -371,20 +367,6 @@ function hideAllViews() {
   activeViewId = null
 }
 
-/** Resolve once the webContents has painted a frame (first-frame gate so a
- * freshly loaded page never flashes white when its view is revealed). */
-function waitForFirstPaint(webContents, timeoutMs = 3000) {
-  return new Promise((resolve) => {
-    const done = () => {
-      webContents.removeListener('paint', done)
-      clearTimeout(timer)
-      resolve()
-    }
-    const timer = setTimeout(done, timeoutMs)
-    webContents.once('paint', done)
-  })
-}
-
 function createWindow() {
   shellWindow = new BrowserWindow({
     width: 1440,
@@ -450,7 +432,6 @@ ipcMain.handle('shell:connect', async (_event, url) => {
   const view = viewFor('local')
   if (!view.webContents.getURL().startsWith(target)) {
     await view.webContents.loadURL(target)
-    await waitForFirstPaint(view.webContents)
   }
   showView('local')
   shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
