@@ -130,16 +130,9 @@
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        padding: 0 24px 8px;
+        padding: 10px 24px 20px;
       }
       .group-title { font-size: 12px; font-weight: 500; color: var(--shell-fg-tertiary); margin: 14px 0 8px; }
-      .list-head {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin: 14px 0 8px;
-      }
-      .list-head .group-title { margin: 0; }
 
       /* dsh Input atom (ui-primitives Input): wrap + icon + borderless input,
          container border highlights on focus-within */
@@ -311,16 +304,16 @@
             <button id="local-enter" class="btn outline" disabled>进入</button>
           </div>
         </div>
-      </div>
 
-      <div class="dialog-scroll">
-        <div class="list-head">
-          <div class="group-title">远程实例</div>
+        <div style="padding: 12px 0 2px">
           <span class="search">
             <span class="search-icon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg></span>
             <input id="inst-search" class="search-input" placeholder="搜索" spellcheck="false" />
           </span>
         </div>
+      </div>
+
+      <div class="dialog-scroll">
         <div id="instances"></div>
       </div>
     </div>
@@ -390,8 +383,10 @@
 
       closeBtn.addEventListener('click', () => window.dshShell.settings.close())
 
+      let currentId = null
       async function renderCurrent() {
         const cur = await window.dshShell.settings.current()
+        currentId = cur.id ?? null
         if (cur.type === null) {
           curName.textContent = '未连接'
           curUrl.textContent = ''
@@ -425,11 +420,21 @@
         for (const inst of matches) {
           const row = document.createElement('div')
           row.className = 'instance-row'
+          const dot = document.createElement('span')
+          dot.className = 'dot'
+          dot.title = '检测中'
+          row.appendChild(dot)
           const meta = document.createElement('div')
           meta.className = 'meta'
           const name = document.createElement('div')
           name.className = 'name'
           name.textContent = inst.name
+          if (currentId === inst.id) {
+            const pill = document.createElement('span')
+            pill.className = 'pill on'
+            pill.textContent = '当前'
+            name.appendChild(pill)
+          }
           const url = document.createElement('div')
           url.className = 'url'
           url.textContent = inst.url
@@ -443,8 +448,16 @@
             if (r.ok) await window.dshShell.settings.close()
             else dlgError.textContent = r.error || '连接失败'
           })
-          row.append(meta, connect)
+          row.append(dot, meta, connect)
           instancesEl.appendChild(row)
+          window.dshShell.remote.health(inst.id).then((h) => {
+            dot.className = h.status === 'online' ? 'dot done'
+              : h.status === 'unauthorized' ? 'dot danger'
+              : 'dot'
+            dot.title = h.status === 'online' ? '在线'
+              : h.status === 'unauthorized' ? '密钥无效'
+              : '离线'
+          })
         }
         if (matches.length === 0) {
           const hint = document.createElement('p')

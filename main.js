@@ -561,7 +561,7 @@ function currentConnection() {
   }
   if (activeViewId !== null) {
     const instance = registry?.find(activeViewId)
-    if (instance !== undefined) return { type: 'remote', name: instance.name, url: instance.url }
+    if (instance !== undefined) return { type: 'remote', name: instance.name, url: instance.url, id: instance.id }
   }
   return { type: null }
 }
