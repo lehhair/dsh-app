@@ -1,0 +1,14 @@
+{
+  "name": "dsh-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dsh desktop shell: embedded dsh runtime via Electron's Node, plus remote dsh node support",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:autostart": "set DSH_AUTOSTART=1&& electron ."
+  },
+  "devDependencies": {
+    "electron": "^43.4.0"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+.dsh-runtime/
+resources/
+dist/
+out/
+*.log
