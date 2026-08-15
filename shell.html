@@ -76,7 +76,7 @@
         text-overflow: ellipsis;
         white-space: nowrap;
         min-width: 0;
-        margin-left: 6px;
+        padding: 0 16px;
       }
       .titlebar .spacer { flex: 1; }
       .titlebar button {
@@ -95,8 +95,6 @@
       .titlebar button:hover:not(:disabled) { background: var(--shell-hover); color: var(--shell-fg); }
       .titlebar button.close:hover:not(:disabled) { background: var(--shell-danger); color: #fff; }
       .titlebar button svg { display: block; }
-      .titlebar button.btn-nav { width: 40px; }
-      .titlebar button.btn-nav svg { width: 11px; height: 11px; }
       .titlebar button.btn-settings { width: 44px; }
       .titlebar button.btn-settings svg { width: 14px; height: 14px; }
 
@@ -179,12 +177,6 @@
   </head>
   <body>
     <header class="titlebar">
-      <button id="nav-back" class="btn-nav" title="后退" disabled>
-        <svg viewBox="0 0 10 10"><path d="M6.5 1 2.5 5l4 4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-      </button>
-      <button id="nav-forward" class="btn-nav" title="前进" disabled>
-        <svg viewBox="0 0 10 10"><path d="M3.5 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-      </button>
       <span class="status" id="title-status"></span>
       <div class="spacer"></div>
       <button id="settings" class="btn-settings" title="设置" hidden>
@@ -262,8 +254,6 @@
       const startBtn = document.getElementById('start')
       const stopBtn = document.getElementById('stop')
       const openBtn = document.getElementById('open')
-      const navBack = document.getElementById('nav-back')
-      const navForward = document.getElementById('nav-forward')
       const settingsBtn = document.getElementById('settings')
       const titleStatus = document.getElementById('title-status')
 
@@ -277,7 +267,7 @@
         stopBtn.disabled = !running
         openBtn.disabled = !running
         startBtn.disabled = running
-        titleStatus.textContent = running ? `· ${url}` : ''
+        titleStatus.textContent = running ? url : 'dsh app'
       }
 
       async function refresh() {
@@ -317,26 +307,13 @@
       openBtn.addEventListener('click', async () => {
         if (!current) return
         const r = await window.dshShell.connect(current.url)
-        if (r.ok) {
-          settingsBtn.hidden = false
-          setNavState(await window.dshShell.nav.state())
-        }
+        if (r.ok) settingsBtn.hidden = false
       })
-
-      // title-bar back/forward control the connected dsh page's history
-      function setNavState(state) {
-        navBack.disabled = !state.canGoBack
-        navForward.disabled = !state.canGoForward
-      }
-      navBack.addEventListener('click', () => window.dshShell.nav.back())
-      navForward.addEventListener('click', () => window.dshShell.nav.forward())
-      window.dshShell.nav.onChanged(setNavState)
 
       // settings returns to the launcher (management) panel
       settingsBtn.addEventListener('click', async () => {
         await window.dshShell.back()
         settingsBtn.hidden = true
-        setNavState({ canGoBack: false, canGoForward: false })
       })
 
       // custom title bar controls
@@ -356,7 +333,6 @@
       window.dshShell.onExited(() => {
         setState(false)
         settingsBtn.hidden = true
-        setNavState({ canGoBack: false, canGoForward: false })
       })
       refresh()
     </script>

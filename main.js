@@ -183,19 +183,6 @@ function createWindow() {
     shellWindow?.webContents.send('theme:sync', tokens)
   })
 
-  // Push dsh-view navigation state so the title bar can enable/disable
-  // back/forward buttons.
-  const pushNavState = () => {
-    if (!shellWindow || !dshView) return
-    const history = dshView.webContents.navigationHistory
-    shellWindow.webContents.send('nav:changed', {
-      canGoBack: history.canGoBack(),
-      canGoForward: history.canGoForward(),
-    })
-  }
-  dshView.webContents.on('did-navigate', pushNavState)
-  dshView.webContents.on('did-navigate-in-page', pushNavState)
-
   shellWindow.on('resize', layoutDshView)
   shellWindow.on('maximize', () => shellWindow?.webContents.send('win:maximized-changed', true))
   shellWindow.on('unmaximize', () => shellWindow?.webContents.send('win:maximized-changed', false))
@@ -223,21 +210,6 @@ ipcMain.handle('shell:connect', async (_event, url) => {
 ipcMain.handle('shell:back', () => {
   dshView?.setVisible(false)
   return { ok: true }
-})
-
-// dsh-view navigation for the title-bar back/forward buttons.
-ipcMain.handle('view:go-back', () => {
-  dshView?.webContents.navigationHistory.goBack()
-  return { ok: true }
-})
-ipcMain.handle('view:go-forward', () => {
-  dshView?.webContents.navigationHistory.goForward()
-  return { ok: true }
-})
-ipcMain.handle('view:nav-state', () => {
-  if (!dshView) return { canGoBack: false, canGoForward: false }
-  const history = dshView.webContents.navigationHistory
-  return { canGoBack: history.canGoBack(), canGoForward: history.canGoForward() }
 })
 
 // Custom title bar window controls.

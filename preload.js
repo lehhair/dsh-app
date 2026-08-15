@@ -20,17 +20,6 @@ if (isLauncher) {
     // view switching (launcher <-> connected dsh web)
     connect: (url) => ipcRenderer.invoke('shell:connect', url),
     back: () => ipcRenderer.invoke('shell:back'),
-    // dsh-view navigation (title-bar back/forward)
-    nav: {
-      back: () => ipcRenderer.invoke('view:go-back'),
-      forward: () => ipcRenderer.invoke('view:go-forward'),
-      state: () => ipcRenderer.invoke('view:nav-state'),
-      onChanged: (callback) => {
-        const listener = (_event, state) => callback(state)
-        ipcRenderer.on('nav:changed', listener)
-        return () => ipcRenderer.removeListener('nav:changed', listener)
-      },
-    },
     // live theme sync from the connected dsh page (title-bar fusion)
     onThemeSync: (callback) => {
       const listener = (_event, tokens) => callback(tokens)
