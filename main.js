@@ -164,10 +164,24 @@ function createWindow() {
 
   // The connected dsh web renders here, below the title bar; the shell UI
   // (title bar + launcher panel) stays in the window's own webContents.
-  dshView = new WebContentsView({ webPreferences: { contextIsolation: true, sandbox: true } })
+  // view-preload.js only samples the page's effective CSS tokens and ships
+  // them to the shell for title-bar fusion — it exposes no API to the page.
+  dshView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(ROOT, 'view-preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+    },
+  })
   shellWindow.contentView.addChildView(dshView)
   dshView.setVisible(false)
   layoutDshView()
+
+  // Forward sampled theme tokens to the shell UI (theme sync / fusion).
+  ipcMain.on('theme:changed', (_event, tokens) => {
+    console.log(`[theme] synced ${Object.keys(tokens).length} tokens`)
+    shellWindow?.webContents.send('theme:sync', tokens)
+  })
 
   shellWindow.on('resize', layoutDshView)
   shellWindow.on('maximize', () => shellWindow?.webContents.send('win:maximized-changed', true))

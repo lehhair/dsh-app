@@ -20,6 +20,12 @@ if (isLauncher) {
     // view switching (launcher <-> connected dsh web)
     connect: (url) => ipcRenderer.invoke('shell:connect', url),
     back: () => ipcRenderer.invoke('shell:back'),
+    // live theme sync from the connected dsh page (title-bar fusion)
+    onThemeSync: (callback) => {
+      const listener = (_event, tokens) => callback(tokens)
+      ipcRenderer.on('theme:sync', listener)
+      return () => ipcRenderer.removeListener('theme:sync', listener)
+    },
     // custom title bar window controls
     window: {
       minimize: () => ipcRenderer.invoke('win:minimize'),
