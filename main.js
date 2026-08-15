@@ -288,7 +288,6 @@ async function checkRemoteHealth(url, key, timeoutMs = 5000) {
 
 // ---- window: frameless shell UI + per-instance WebContentsViews ----
 let shellWindow = null
-let settingsWindow = null // shell settings dialog (modal child window)
 const views = new Map() // 'local' | instanceId | 'adhoc' -> WebContentsView
 let activeViewId = null // which view is currently shown
 
@@ -317,6 +316,7 @@ function layoutViews() {
   for (const view of views.values()) {
     view.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
   }
+  if (dialogView) dialogView.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
 }
 
 /** Get (creating on demand) the WebContentsView for one target. */
@@ -484,34 +484,47 @@ ipcMain.handle('win:toggle-maximize', () => {
 ipcMain.handle('win:close', () => { shellWindow?.close(); return { ok: true } })
 ipcMain.handle('win:is-maximized', () => shellWindow?.isMaximized() ?? false)
 
-// ---- settings dialog window (modal child; shell settings live here) ----
-function openSettingsWindow() {
-  if (settingsWindow) {
-    settingsWindow.focus()
-    return
+// ---- settings dialog overlay (transparent WebContentsView above the views) ----
+let dialogView = null
+
+function ensureDialogView() {
+  if (dialogView === null) {
+    dialogView = new WebContentsView({
+      webPreferences: {
+        preload: path.join(ROOT, 'preload.js'),
+        contextIsolation: true,
+        sandbox: true,
+      },
+    })
+    dialogView.setBackgroundColor('#00000000')
+    shellWindow.contentView.addChildView(dialogView)
+    dialogView.setVisible(false)
+    layoutDialogView()
+    attachDevTools(dialogView.webContents)
   }
-  settingsWindow = new BrowserWindow({
-    width: 420,
-    height: 560,
-    parent: shellWindow ?? undefined,
-    modal: true,
-    frame: false,
-    resizable: false,
-    backgroundColor: '#151517',
-    show: false,
-    webPreferences: {
-      preload: path.join(ROOT, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  })
-  settingsWindow.loadFile(SETTINGS_HTML)
-  settingsWindow.once('ready-to-show', () => settingsWindow.show())
-  settingsWindow.on('closed', () => { settingsWindow = null })
+  return dialogView
 }
 
-/** What the settings window should show as the current connection. */
+function layoutDialogView() {
+  if (!shellWindow || !dialogView) return
+  const [width, height] = shellWindow.getContentSize()
+  dialogView.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
+}
+
+function openSettings() {
+  const view = ensureDialogView()
+  // Re-add so the dialog draws above every instance view, then load fresh.
+  shellWindow.contentView.removeChildView(view)
+  shellWindow.contentView.addChildView(view)
+  view.webContents.loadFile(SETTINGS_HTML)
+  view.setVisible(true)
+}
+
+function closeSettings() {
+  dialogView?.setVisible(false)
+}
+
+/** What the settings dialog should show as the current connection. */
 function currentConnection() {
   if (activeViewId === 'local') {
     return local ? { type: 'local', name: '本机实例', url: local.url } : { type: null }
@@ -523,8 +536,8 @@ function currentConnection() {
   return { type: null }
 }
 
-ipcMain.handle('settings:open', () => { openSettingsWindow(); return { ok: true } })
-ipcMain.handle('settings:close', () => { settingsWindow?.close(); return { ok: true } })
+ipcMain.handle('settings:open', () => { openSettings(); return { ok: true } })
+ipcMain.handle('settings:close', () => { closeSettings(); return { ok: true } })
 ipcMain.handle('settings:current', () => currentConnection())
 ipcMain.handle('settings:get-login-item', () => app.getLoginItemSettings().openAtLogin === true)
 ipcMain.handle('settings:set-login-item', (_event, enabled) => {
