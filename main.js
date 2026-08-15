@@ -87,7 +87,6 @@ function rgbToHex(value) {
 
 // ---- embedded local instance state ----
 let local = null // { child, port, url, logs: string[] }
-let activeView = null // what the view currently shows: 'local' | instanceId | null
 let registry = null // remote-node registry (instances + encrypted keys)
 
 function capture(child, label) {
@@ -193,10 +192,10 @@ function ensureGatewaySession(url, key) {
   })
 }
 
-/** Write the gateway session cookie into the view's session (persistent). */
-async function setViewCookie(url, value) {
+/** Write the gateway session cookie into a view's (partition-isolated) session. */
+async function setViewCookie(view, url, value) {
   const parsed = new URL(url)
-  const session = dshView?.webContents.session
+  const session = view.webContents.session
   if (!session) return
   await session.cookies.set({
     url: `${parsed.protocol}//${parsed.host}/`,
@@ -212,8 +211,9 @@ async function setViewCookie(url, value) {
 
 /**
  * Connect the dsh view to a remote node directly (no proxy layer): pre-login
- * to the gateway, plant the session cookie, load the gateway origin. The
- * origin is stable, so Chromium's disk cache applies naturally.
+ * to the gateway, plant the session cookie in that instance's own partition,
+ * load the gateway origin. The origin is stable, so Chromium's disk cache
+ * applies naturally; different instances never share cookies.
  */
 async function connectRemote(rawUrl, rawKey) {
   const url = String(rawUrl ?? '').trim()
@@ -223,10 +223,9 @@ async function connectRemote(rawUrl, rawKey) {
   try {
     const session = await ensureGatewaySession(url, key)
     if (!session.ok) return session
-    await setViewCookie(url, session.cookie)
-    await dshView.webContents.loadURL(url)
-    dshView.setVisible(true)
-    activeView = null
+    const view = showView('adhoc')
+    await setViewCookie(view, url, session.cookie)
+    if (!view.webContents.getURL().startsWith(url)) await view.webContents.loadURL(url)
     return { ok: true, url }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -234,9 +233,9 @@ async function connectRemote(rawUrl, rawKey) {
 }
 
 /**
- * Connect by registry id. Re-entering the same instance while its page is
- * still in the view just reveals it (near-instant); otherwise pre-login,
- * refresh the session cookie, and load.
+ * Connect by registry id. Each instance owns a partition-isolated view, so
+ * two instances at the SAME URL with DIFFERENT keys keep separate sessions.
+ * Re-entering an already-loaded instance just reveals its view.
  */
 async function connectById(id) {
   const instance = registry?.find(id)
@@ -244,17 +243,13 @@ async function connectById(id) {
   const key = registry.getSecret(id)
   if (key === undefined) return { ok: false, error: '未保存访问密钥，请编辑实例补全' }
   try {
-    if (activeView === id && dshView.webContents.getURL().startsWith(instance.url)) {
-      dshView.setVisible(true)
-      return { ok: true, url: instance.url, cached: true }
-    }
     const session = await ensureGatewaySession(instance.url, key)
     if (!session.ok) return session
-    await setViewCookie(instance.url, session.cookie)
-    await dshView.webContents.loadURL(instance.url)
-    dshView.setVisible(true)
-    activeView = id
-    return { ok: true, url: instance.url }
+    const view = showView(id)
+    await setViewCookie(view, instance.url, session.cookie)
+    const alreadyLoaded = view.webContents.getURL().startsWith(instance.url)
+    if (!alreadyLoaded) await view.webContents.loadURL(instance.url)
+    return { ok: true, url: instance.url, cached: alreadyLoaded }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
@@ -290,9 +285,10 @@ async function checkRemoteHealth(url, key, timeoutMs = 5000) {
   })
 }
 
-// ---- window: frameless shell UI + WebContentsView for the dsh page ----
+// ---- window: frameless shell UI + per-instance WebContentsViews ----
 let shellWindow = null
-let dshView = null
+const views = new Map() // 'local' | instanceId | 'adhoc' -> WebContentsView
+let activeViewId = null // which view is currently shown
 
 /** F12 opens DevTools for the given webContents (dev aid for both pages). */
 function attachDevTools(webContents) {
@@ -303,10 +299,56 @@ function attachDevTools(webContents) {
   })
 }
 
-function layoutDshView() {
-  if (!shellWindow || !dshView) return
+/**
+ * Per-instance session partition: cookies and cache are isolated per node.
+ * Two instances pointing at the SAME gateway URL with DIFFERENT keys get
+ * separate cookie stores — no cross-talk (the previous single-view scheme
+ * shared one origin cookie and overwrote each other's session).
+ */
+function viewPartition(id) {
+  return id === 'local' ? 'persist:dsh-local' : `persist:dsh-instance-${id}`
+}
+
+function layoutViews() {
+  if (!shellWindow) return
   const [width, height] = shellWindow.getContentSize()
-  dshView.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
+  for (const view of views.values()) {
+    view.setBounds({ x: 0, y: TITLEBAR_HEIGHT, width, height: height - TITLEBAR_HEIGHT })
+  }
+}
+
+/** Get (creating on demand) the WebContentsView for one target. */
+function viewFor(id) {
+  let view = views.get(id)
+  if (view === undefined) {
+    view = new WebContentsView({
+      webPreferences: {
+        partition: viewPartition(id),
+        preload: path.join(ROOT, 'view-preload.js'),
+        contextIsolation: true,
+        sandbox: true,
+      },
+    })
+    shellWindow.contentView.addChildView(view)
+    view.setVisible(false)
+    layoutViews()
+    attachDevTools(view.webContents)
+    views.set(id, view)
+  }
+  return view
+}
+
+/** Show one target's view (hiding all others). */
+function showView(id) {
+  const view = viewFor(id)
+  for (const [key, candidate] of views) candidate.setVisible(key === id)
+  activeViewId = id
+  return view
+}
+
+function hideAllViews() {
+  for (const view of views.values()) view.setVisible(false)
+  activeViewId = null
 }
 
 function createWindow() {
@@ -335,25 +377,11 @@ function createWindow() {
   shellWindow.loadFile(SHELL_HTML)
   attachDevTools(shellWindow.webContents)
 
-  // The connected dsh web renders here, below the title bar; the shell UI
-  // (title bar + launcher panel) stays in the window's own webContents.
-  // view-preload.js only samples the page's effective CSS tokens and ships
-  // them to the shell for title-bar fusion — it exposes no API to the page.
-  dshView = new WebContentsView({
-    webPreferences: {
-      preload: path.join(ROOT, 'view-preload.js'),
-      contextIsolation: true,
-      sandbox: true,
-    },
-  })
-  shellWindow.contentView.addChildView(dshView)
-  dshView.setVisible(false)
-  layoutDshView()
-  attachDevTools(dshView.webContents)
-
-  // Forward sampled theme tokens to the shell UI (theme sync / fusion),
-  // and keep the OS-rendered window controls on the same palette.
-  ipcMain.on('theme:changed', (_event, tokens) => {
+  // Forward sampled theme tokens ONLY from the currently shown view (hidden
+  // views keep sampling but must not override the visible page's palette).
+  ipcMain.on('theme:changed', (event, tokens) => {
+    const active = activeViewId ? views.get(activeViewId) : undefined
+    if (active === undefined || event.sender !== active.webContents) return
     console.log(`[theme] synced ${Object.keys(tokens).length} tokens`)
     const bg = tokens['--dsw-alias-bg-base']
     const fg = tokens['--dsw-alias-label-primary']
@@ -367,7 +395,7 @@ function createWindow() {
     shellWindow?.webContents.send('theme:sync', tokens)
   })
 
-  shellWindow.on('resize', layoutDshView)
+  shellWindow.on('resize', layoutViews)
   shellWindow.on('maximize', () => shellWindow?.webContents.send('win:maximized-changed', true))
   shellWindow.on('unmaximize', () => shellWindow?.webContents.send('win:maximized-changed', false))
   shellWindow.on('closed', () => { shellWindow = null })
@@ -385,27 +413,24 @@ ipcMain.handle('local:logs', () => local?.logs ?? [])
 // Reusing the same view without reload when it already shows that target.
 ipcMain.handle('shell:connect', async (_event, url) => {
   const target = String(url)
-  if (activeView === 'local' && dshView.webContents.getURL().startsWith(target)) {
-    dshView.setVisible(true)
-    return { ok: true }
+  const view = showView('local')
+  if (!view.webContents.getURL().startsWith(target)) {
+    await view.webContents.loadURL(target)
   }
-  await dshView.webContents.loadURL(target)
-  dshView.setVisible(true)
-  activeView = 'local'
   return { ok: true }
 })
 
-// Back to the launcher panel: hide the view only. Persistent proxies and the
-// embedded process stay alive so re-entering is fast (page + disk cache kept).
+// Back to the launcher panel: hide every view. Embedded process stays alive
+// so re-entering is fast (page + per-instance disk cache kept).
 ipcMain.handle('shell:back', () => {
-  dshView?.setVisible(false)
+  hideAllViews()
   return { ok: true }
 })
 
 // Remote node connection (direct gateway origin, pre-login session cookie).
 ipcMain.handle('remote:connect', (_event, id) => connectById(String(id)))
 ipcMain.handle('remote:disconnect', () => {
-  dshView?.setVisible(false)
+  hideAllViews()
   return { ok: true }
 })
 
@@ -420,7 +445,12 @@ ipcMain.handle('remote:save', (_event, input) => {
 })
 ipcMain.handle('remote:remove', (_event, id) => {
   const instanceId = String(id)
-  if (activeView === instanceId) dshView?.setVisible(false)
+  const view = views.get(instanceId)
+  if (view) {
+    shellWindow.contentView.removeChildView(view)
+    views.delete(instanceId)
+  }
+  if (activeViewId === instanceId) activeViewId = null
   registry?.remove(instanceId)
   return { ok: true }
 })
@@ -465,8 +495,8 @@ app.whenReady().then(() => {
     } else {
       startLocal().then(async (result) => {
         if (result.ok) {
-          await dshView.webContents.loadURL(result.url)
-          dshView.setVisible(true)
+          const view = showView('local')
+          await view.webContents.loadURL(result.url)
         }
       })
     }
