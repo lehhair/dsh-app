@@ -12,13 +12,18 @@ const { ipcRenderer } = require('electron')
 const TOKENS = [
   '--dsw-alias-bg-base',
   '--dsw-alias-bg-layer-1',
+  '--dsw-alias-bg-layer-2',
   '--dsw-alias-label-primary',
+  '--dsw-alias-label-primary-foreground',
   '--dsw-alias-label-secondary',
   '--dsw-alias-label-tertiary',
   '--dsw-alias-border-l2',
   '--dsw-alias-interactive-bg-hover',
+  '--dsw-alias-interactive-bg-active',
   '--dsw-alias-button-primary-fill',
   '--dsw-alias-button-primary-hover',
+  '--dsw-alias-button-ghost-active-fill',
+  '--dsw-alias-button-ghost-active-border',
   '--dsw-alias-state-error-primary',
   '--dsw-alias-state-success-primary',
 ]

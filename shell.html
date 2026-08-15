@@ -13,13 +13,18 @@
         color-scheme: light dark;
         --shell-bg: rgb(255, 255, 255);
         --shell-layer: rgb(255, 255, 255);
+        --shell-layer-2: rgb(255, 255, 255);
         --shell-fg: rgb(15, 17, 21);
+        --shell-fg-foreground: rgb(255, 255, 255);
         --shell-fg-secondary: rgb(97, 102, 107);
         --shell-fg-tertiary: rgb(129, 133, 140);
         --shell-border: rgba(0, 0, 0, 0.1);
         --shell-hover: rgba(38, 49, 72, 0.06);
+        --shell-active: rgba(38, 49, 72, 0.1);
         --shell-brand: rgb(15, 17, 21);
         --shell-brand-hover: rgb(67, 69, 74);
+        --shell-ghost-fill: rgb(235, 238, 242);
+        --shell-ghost-border: rgb(151, 157, 166);
         --shell-danger: rgb(236, 19, 19);
         --shell-success: rgb(34, 197, 94);
       }
@@ -27,13 +32,18 @@
         :root {
           --shell-bg: rgb(21, 21, 23);
           --shell-layer: rgb(44, 44, 46);
+          --shell-layer-2: rgb(44, 44, 46);
           --shell-fg: rgb(249, 250, 251);
+          --shell-fg-foreground: rgb(15, 17, 21);
           --shell-fg-secondary: rgb(207, 211, 214);
           --shell-fg-tertiary: rgb(173, 178, 184);
           --shell-border: rgba(255, 255, 255, 0.12);
           --shell-hover: rgba(255, 255, 255, 0.08);
+          --shell-active: rgba(255, 255, 255, 0.14);
           --shell-brand: rgb(249, 250, 251);
           --shell-brand-hover: rgb(235, 238, 242);
+          --shell-ghost-fill: rgb(67, 69, 74);
+          --shell-ghost-border: rgb(129, 133, 140);
           --shell-danger: rgb(242, 90, 90);
           --shell-success: rgb(34, 197, 94);
         }
@@ -130,41 +140,89 @@
       }
       .section .meta { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0 0 16px; }
       .section .hint { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0; }
-      .badge {
-        font-size: 12px;
-        padding: 2px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--shell-border);
-        color: var(--shell-fg-secondary);
-      }
-      .badge.on { color: var(--shell-brand); border-color: var(--shell-brand); }
-      .actions { display: flex; gap: 10px; align-items: center; }
-      button.primary {
-        height: 34px;
-        padding: 0 18px;
+      .actions { display: flex; gap: 8px; align-items: center; }
+
+      /* dsh Button (figma 1:155): h36 capsule, pad 14, gap 4, r18 */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
         border: none;
         border-radius: 18px;
-        background: var(--shell-brand);
-        color: var(--shell-bg);
-        font: inherit;
-        font-size: 13px;
         cursor: pointer;
-      }
-      button.primary:hover { background: var(--shell-brand-hover); }
-      button.primary:disabled { opacity: 0.4; cursor: default; }
-      button.ghost {
-        height: 34px;
-        padding: 0 18px;
-        border-radius: 18px;
-        background: transparent;
+        font-size: 14px;
+        line-height: 22px;
         color: var(--shell-fg);
-        border: 1px solid var(--shell-border);
-        font: inherit;
-        font-size: 13px;
-        cursor: pointer;
+        background: transparent;
+        padding: 0 14px;
+        height: 36px;
+        font-family: inherit;
       }
-      button.ghost:hover { background: var(--shell-hover); }
-      button.ghost:disabled { opacity: 0.4; cursor: default; }
+      .btn:disabled { cursor: not-allowed; opacity: 0.4; }
+      .btn.primary {
+        background: var(--shell-brand);
+        color: var(--shell-fg-foreground);
+      }
+      .btn.primary:hover:not(:disabled) { background: var(--shell-brand-hover); }
+      .btn.ghost:hover:not(:disabled) { background: var(--shell-hover); }
+      .btn.ghost:active:not(:disabled) { background: var(--shell-active); }
+      .btn.outline { border: 1px solid var(--shell-border); background: transparent; }
+      .btn.outline:hover:not(:disabled) { background: var(--shell-hover); }
+
+      /* dsh Pill: h24 r12, label-secondary on layer-2; active = ghost-active fill + inset ring */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 0 8px;
+        border: none;
+        border-radius: 12px;
+        font-size: 12px;
+        line-height: 18px;
+        color: var(--shell-fg-secondary);
+        background: var(--shell-layer-2);
+      }
+      .pill.on {
+        color: var(--shell-fg);
+        background: var(--shell-ghost-fill);
+        box-shadow: inset 0 0 0 1px var(--shell-ghost-border);
+      }
+
+      /* dsh StateDot: same-color halo + solid core riding currentColor */
+      .dot {
+        position: relative;
+        display: inline-block;
+        flex: none;
+        width: 10px;
+        height: 10px;
+      }
+      .dot::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.1;
+      }
+      .dot::after {
+        content: '';
+        position: absolute;
+        inset: 20%;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .dot.done { color: var(--shell-success); }
+      .dot.error { color: var(--shell-danger); }
+      .pill svg { width: 12px; height: 12px; display: block; }
+      .pill svg rect { fill: currentColor; opacity: 0.15; animation: dsh-state-dot-chase 1s infinite; }
+      @keyframes dsh-state-dot-chase {
+        0%, 12.4% { opacity: 1; }
+        12.5%, 24.9% { opacity: 0.6; }
+        25%, 37.4% { opacity: 0.35; }
+        37.5%, 100% { opacity: 0.15; }
+      }
       pre.log {
         margin: 14px 0 0;
         padding: 10px 12px;
@@ -213,12 +271,12 @@
         </div>
 
         <section class="section">
-          <div class="row-title">本机实例 <span id="badge" class="badge">未知</span></div>
+          <div class="row-title">本机实例 <span id="badge" class="pill">未知</span></div>
           <p class="meta" id="meta">未启动</p>
           <div class="actions">
-            <button id="start" class="primary">启动内嵌 dsh</button>
-            <button id="stop" class="ghost" disabled>停止</button>
-            <button id="open" class="ghost" disabled>打开界面</button>
+            <button id="start" class="btn primary">启动内嵌 dsh</button>
+            <button id="stop" class="btn ghost" disabled>停止</button>
+            <button id="open" class="btn outline" disabled>打开界面</button>
           </div>
           <p class="error" id="error"></p>
           <pre class="log" id="log" hidden></pre>
@@ -236,13 +294,18 @@
       const TOKEN_MAP = {
         '--dsw-alias-bg-base': '--shell-bg',
         '--dsw-alias-bg-layer-1': '--shell-layer',
+        '--dsw-alias-bg-layer-2': '--shell-layer-2',
         '--dsw-alias-label-primary': '--shell-fg',
+        '--dsw-alias-label-primary-foreground': '--shell-fg-foreground',
         '--dsw-alias-label-secondary': '--shell-fg-secondary',
         '--dsw-alias-label-tertiary': '--shell-fg-tertiary',
         '--dsw-alias-border-l2': '--shell-border',
         '--dsw-alias-interactive-bg-hover': '--shell-hover',
+        '--dsw-alias-interactive-bg-active': '--shell-active',
         '--dsw-alias-button-primary-fill': '--shell-brand',
         '--dsw-alias-button-primary-hover': '--shell-brand-hover',
+        '--dsw-alias-button-ghost-active-fill': '--shell-ghost-fill',
+        '--dsw-alias-button-ghost-active-border': '--shell-ghost-border',
         '--dsw-alias-state-error-primary': '--shell-danger',
         '--dsw-alias-state-success-primary': '--shell-success',
       }
@@ -266,20 +329,48 @@
 
       let current = null // { port, url }
 
-      function setState(running, port, url) {
-        current = running ? { port, url } : null
-        badge.textContent = running ? '运行中' : '已停止'
-        badge.classList.toggle('on', running)
-        meta.textContent = running ? `http://127.0.0.1:${port}/` : '未启动'
+      function setBadge(state, text) {
+        badge.textContent = ''
+        if (state === 'ongoing') {
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+          svg.setAttribute('viewBox', '0 0 10 10')
+          svg.setAttribute('shape-rendering', 'crispEdges')
+          for (const [x, y] of [[0, 0], [4, 0], [8, 0], [8, 4], [8, 8], [4, 8], [0, 8], [0, 4]]) {
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+            rect.setAttribute('x', x)
+            rect.setAttribute('y', y)
+            rect.setAttribute('width', 2)
+            rect.setAttribute('height', 2)
+            svg.appendChild(rect)
+          }
+          badge.appendChild(svg)
+        } else if (state === 'done' || state === 'error') {
+          const dot = document.createElement('span')
+          dot.className = `dot ${state}`
+          badge.appendChild(dot)
+        }
+        badge.appendChild(document.createTextNode(text))
+        badge.classList.toggle('on', state === 'done')
+      }
+
+      // status: 'idle' | 'starting' | 'running' | 'error'
+      function setState(status, port, url) {
+        current = status === 'running' ? { port, url } : null
+        if (status === 'running') setBadge('done', '运行中')
+        else if (status === 'starting') setBadge('ongoing', '启动中')
+        else if (status === 'error') setBadge('error', '启动失败')
+        else setBadge(null, '已停止')
+        meta.textContent = status === 'running' ? `http://127.0.0.1:${port}/` : '未启动'
+        const running = status === 'running'
         stopBtn.disabled = !running
         openBtn.disabled = !running
-        startBtn.disabled = running
+        startBtn.disabled = running || status === 'starting'
         titleStatus.textContent = running ? url : 'DeepSeek Harness'
       }
 
       async function refresh() {
         const s = await window.dshShell.status()
-        setState(s.running, s.port, s.url)
+        setState(s.running ? 'running' : 'idle', s.port, s.url)
         if (s.running) {
           const logs = await window.dshShell.logs()
           log.hidden = false
@@ -290,16 +381,14 @@
 
       startBtn.addEventListener('click', async () => {
         error.textContent = ''
-        startBtn.disabled = true
-        startBtn.textContent = '启动中…'
+        setState('starting')
         const result = await window.dshShell.startLocal()
-        startBtn.textContent = '启动内嵌 dsh'
         if (result.ok) {
-          setState(true, result.port, result.url)
+          setState('running', result.port, result.url)
           log.hidden = false
           log.textContent = (await window.dshShell.logs()).join('').slice(-4000)
         } else {
-          setState(false)
+          setState('error')
           error.textContent = result.error || '启动失败'
           log.hidden = false
           log.textContent = (result.logs || []).join('').slice(-4000)
@@ -308,7 +397,7 @@
 
       stopBtn.addEventListener('click', async () => {
         await window.dshShell.stopLocal()
-        setState(false)
+        setState('idle')
       })
 
       openBtn.addEventListener('click', async () => {
@@ -338,7 +427,7 @@
       syncMaximize()
 
       window.dshShell.onExited(() => {
-        setState(false)
+        setState('idle')
         settingsBtn.hidden = true
       })
       refresh()
