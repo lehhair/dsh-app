@@ -226,8 +226,8 @@ async function connectRemote(rawUrl, rawKey) {
     if (!session.ok) return session
     const view = viewFor('adhoc')
     await setViewCookie(view, url, session.cookie)
-    if (!view.webContents.getURL().startsWith(url)) await view.webContents.loadURL(url)
     showView('adhoc')
+    if (!view.webContents.getURL().startsWith(url)) void view.webContents.loadURL(url)
     shellWindow?.webContents.send('connection:changed', { name: new URL(url).host })
     return { ok: true, url }
   } catch (error) {
@@ -255,10 +255,10 @@ async function connectById(id) {
     const view = viewFor(id)
     await setViewCookie(view, instance.url, session.cookie)
     const alreadyLoaded = view.webContents.getURL().startsWith(instance.url)
-    if (!alreadyLoaded) await view.webContents.loadURL(instance.url)
-    // Reveal only after did-finish-load: the page's HTML/CSS (and its body
-    // background) are in place, so no white flash — and no artificial delay.
+    // Reveal immediately (dark ground + the page's own loading UI), then
+    // load without blocking the click: no dead seconds on the launcher.
     showView(id)
+    if (!alreadyLoaded) void view.webContents.loadURL(instance.url)
     shellWindow?.webContents.send('connection:changed', { name: instance.name })
     console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
     return { ok: true, url: instance.url, cached: alreadyLoaded }
@@ -346,6 +346,8 @@ function viewFor(id) {
     // Register BEFORE layoutViews: it iterates the Map to size each view,
     // so a not-yet-registered view would keep 0x0 bounds and never show.
     views.set(id, view)
+    // Dark ground while a page loads: never a glaring white flash.
+    view.setBackgroundColor('#151517')
     shellWindow.contentView.addChildView(view)
     view.setVisible(false)
     layoutViews()
@@ -430,10 +432,8 @@ ipcMain.handle('local:logs', () => local?.logs ?? [])
 ipcMain.handle('shell:connect', async (_event, url) => {
   const target = String(url)
   const view = viewFor('local')
-  if (!view.webContents.getURL().startsWith(target)) {
-    await view.webContents.loadURL(target)
-  }
   showView('local')
+  if (!view.webContents.getURL().startsWith(target)) void view.webContents.loadURL(target)
   shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
   return { ok: true }
 })
