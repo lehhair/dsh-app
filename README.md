@@ -53,8 +53,11 @@ npm run start:autostart            # 启动壳并自动拉起内嵌 dsh（开发
 
 ## 已知限制与下一版
 
-- **远程节点**：本地代理注入 Bearer（`Authorization: Bearer <key>`，HTTP + WS 全链路）→ 网关 → dsh；
-  实例注册表 + keyring（safeStorage）；与 OpenCodeUI 的多服务器模型一致
+- **远程节点（已完成）**：直连网关 origin，主进程预登录（`POST /_gateway/login` 取
+  `Set-Cookie`）→ 写入 view session（HttpOnly + SameSite=Strict + 7 天）→ 直接加载网关
+  URL。fetch 与 WebSocket 都自动携带 cookie；origin 稳定，Chromium 磁盘缓存自然生效。
+  同 host 多端口网关的 cookie 会互相覆盖——每次连接都重新预登录刷新（一次 ~ms POST）。
+- **设置注入**：`dsh-app-shell` 插件把"桌面客户端"设置 section 注入连接的 dsh 设置页
 - **打包**：electron-builder + `resources/node.exe`（官方 Node 24 二进制）+ `.dsh-runtime` 进包
 - **内嵌 dsh 更新**：随壳发版（简单）或独立更新通道（后续）
 - 内嵌实例默认 disable remote-gateway（overlay）：本机使用不需要再包一层网关；

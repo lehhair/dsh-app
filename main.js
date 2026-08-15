@@ -19,7 +19,6 @@ const http = require('node:http')
 const https = require('node:https')
 const net = require('node:net')
 const fs = require('node:fs')
-const { startRemoteProxy, stopRemoteProxy, parseTarget } = require('./proxy')
 const { createRegistry } = require('./registry')
 
 const ROOT = __dirname
@@ -88,7 +87,7 @@ function rgbToHex(value) {
 
 // ---- embedded local instance state ----
 let local = null // { child, port, url, logs: string[] }
-let remote = null // { port, url } — loopback proxy for a remote node
+let activeView = null // what the view currently shows: 'local' | instanceId | null
 let registry = null // remote-node registry (instances + encrypted keys)
 
 function capture(child, label) {
@@ -146,18 +145,75 @@ function stopLocal() {
   }
 }
 
-/** Stop the remote-node loopback proxy, if one is running. */
-async function disconnectRemote() {
-  if (remote) {
-    stopRemoteProxy(remote)
-    remote = null
-  }
+/** The gateway login path and session cookie name (remote-gateway defaults). */
+const GATEWAY_LOGIN_PATH = '/_gateway/login'
+const GATEWAY_COOKIE_NAME = 'dsh_gateway_key'
+const SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+
+/**
+ * Pre-login to a remote gateway: POST the key, capture the Set-Cookie
+ * session, so the view can load the gateway origin with the cookie already
+ * in place (no login-page flash, and fetch + WebSocket both carry it).
+ */
+function ensureGatewaySession(url, key) {
+  const parsed = new URL(url)
+  const transport = parsed.protocol === 'https:' ? https : http
+  const postData = `key=${encodeURIComponent(key)}&next=/`
+  return new Promise((resolve) => {
+    const req = transport.request({
+      host: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path: GATEWAY_LOGIN_PATH,
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'content-length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      const setCookie = res.headers['set-cookie']
+      res.resume()
+      if (res.statusCode === 302 && Array.isArray(setCookie)) {
+        const part = setCookie
+          .map((cookie) => cookie.split(';')[0])
+          .find((pair) => pair.startsWith(`${GATEWAY_COOKIE_NAME}=`))
+        if (part !== undefined) {
+          resolve({ ok: true, cookie: part.slice(GATEWAY_COOKIE_NAME.length + 1) })
+          return
+        }
+      }
+      if (res.statusCode === 401) resolve({ ok: false, error: '访问密钥无效' })
+      else resolve({ ok: false, error: `网关响应异常（${res.statusCode ?? '无响应'}）` })
+    })
+    req.on('error', (error) => resolve({ ok: false, error: `无法连接网关：${error.message}` }))
+    req.setTimeout(8000, () => {
+      req.destroy()
+      resolve({ ok: false, error: '连接网关超时' })
+    })
+    req.end(postData)
+  })
+}
+
+/** Write the gateway session cookie into the view's session (persistent). */
+async function setViewCookie(url, value) {
+  const parsed = new URL(url)
+  const session = dshView?.webContents.session
+  if (!session) return
+  await session.cookies.set({
+    url: `${parsed.protocol}//${parsed.host}/`,
+    name: GATEWAY_COOKIE_NAME,
+    value,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: parsed.protocol === 'https:',
+    expirationDate: Math.floor(Date.now() / 1000) + SESSION_COOKIE_MAX_AGE_SECONDS,
+  })
 }
 
 /**
- * Connect the dsh view to a remote node through a loopback proxy that
- * injects the gateway key (Bearer) on every request, WebSocket upgrades
- * included.
+ * Connect the dsh view to a remote node directly (no proxy layer): pre-login
+ * to the gateway, plant the session cookie, load the gateway origin. The
+ * origin is stable, so Chromium's disk cache applies naturally.
  */
 async function connectRemote(rawUrl, rawKey) {
   const url = String(rawUrl ?? '').trim()
@@ -165,26 +221,43 @@ async function connectRemote(rawUrl, rawKey) {
   if (!/^https?:\/\/[^/]+$/.test(url)) return { ok: false, error: '无效的地址，形如 http://192.168.1.233:8443' }
   if (key.length === 0) return { ok: false, error: '缺少访问密钥' }
   try {
-    await disconnectRemote()
-    const { port } = await startRemoteProxy(url, key)
-    const localUrl = `http://127.0.0.1:${port}/`
-    remote = { port, url: localUrl }
-    await dshView.webContents.loadURL(localUrl)
+    const session = await ensureGatewaySession(url, key)
+    if (!session.ok) return session
+    await setViewCookie(url, session.cookie)
+    await dshView.webContents.loadURL(url)
     dshView.setVisible(true)
-    return { ok: true, url: localUrl }
+    activeView = null
+    return { ok: true, url }
   } catch (error) {
-    await disconnectRemote()
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
-/** Connect by registry id (resolves the stored URL + decrypted key). */
+/**
+ * Connect by registry id. Re-entering the same instance while its page is
+ * still in the view just reveals it (near-instant); otherwise pre-login,
+ * refresh the session cookie, and load.
+ */
 async function connectById(id) {
   const instance = registry?.find(id)
   if (instance === undefined) return { ok: false, error: '实例不存在' }
   const key = registry.getSecret(id)
   if (key === undefined) return { ok: false, error: '未保存访问密钥，请编辑实例补全' }
-  return connectRemote(instance.url, key)
+  try {
+    if (activeView === id && dshView.webContents.getURL().startsWith(instance.url)) {
+      dshView.setVisible(true)
+      return { ok: true, url: instance.url, cached: true }
+    }
+    const session = await ensureGatewaySession(instance.url, key)
+    if (!session.ok) return session
+    await setViewCookie(instance.url, session.cookie)
+    await dshView.webContents.loadURL(instance.url)
+    dshView.setVisible(true)
+    activeView = id
+    return { ok: true, url: instance.url }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /** Probe one remote gateway's health with its stored key. */
@@ -308,26 +381,30 @@ ipcMain.handle('local:status', () => local
   : { running: false })
 ipcMain.handle('local:logs', () => local?.logs ?? [])
 
-// Connect the dsh view to a URL and bring it over the launcher panel.
+// Connect the dsh view to a URL (local embedded instance) and show it.
+// Reusing the same view without reload when it already shows that target.
 ipcMain.handle('shell:connect', async (_event, url) => {
   const target = String(url)
-  if (!dshView) return { ok: false, error: 'view unavailable' }
+  if (activeView === 'local' && dshView.webContents.getURL().startsWith(target)) {
+    dshView.setVisible(true)
+    return { ok: true }
+  }
   await dshView.webContents.loadURL(target)
   dshView.setVisible(true)
+  activeView = 'local'
   return { ok: true }
 })
 
-// Back to the launcher panel (hides the dsh view; stops a remote proxy).
-ipcMain.handle('shell:back', async () => {
-  await disconnectRemote()
+// Back to the launcher panel: hide the view only. Persistent proxies and the
+// embedded process stay alive so re-entering is fast (page + disk cache kept).
+ipcMain.handle('shell:back', () => {
   dshView?.setVisible(false)
   return { ok: true }
 })
 
-// Remote node connection (loopback proxy injecting Bearer).
+// Remote node connection (direct gateway origin, pre-login session cookie).
 ipcMain.handle('remote:connect', (_event, id) => connectById(String(id)))
-ipcMain.handle('remote:disconnect', async () => {
-  await disconnectRemote()
+ipcMain.handle('remote:disconnect', () => {
   dshView?.setVisible(false)
   return { ok: true }
 })
@@ -342,7 +419,9 @@ ipcMain.handle('remote:save', (_event, input) => {
   }
 })
 ipcMain.handle('remote:remove', (_event, id) => {
-  registry?.remove(String(id))
+  const instanceId = String(id)
+  if (activeView === instanceId) dshView?.setVisible(false)
+  registry?.remove(instanceId)
   return { ok: true }
 })
 ipcMain.handle('remote:set-default', (_event, id) => {
@@ -400,5 +479,4 @@ app.on('window-all-closed', () => {
 })
 app.on('will-quit', () => {
   stopLocal()
-  void disconnectRemote()
 })
