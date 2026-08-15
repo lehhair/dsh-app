@@ -318,7 +318,7 @@
         min-width: 0;
       }
       .update-status {
-        margin: 0;
+        margin: 4px 0 0;
         font-size: 12px;
         color: var(--shell-fg-tertiary);
         line-height: 1.5;
@@ -510,6 +510,14 @@
             <button id="stop" class="btn ghost" disabled>停止</button>
             <button id="open" class="btn outline" disabled>打开界面</button>
           </div>
+          <div class="behavior" style="padding:4px 0 0">
+            <span class="label">内嵌 dsh</span>
+            <span class="version" id="dsh-version">…</span>
+            <span style="flex:1"></span>
+            <button id="check-update" class="btn sm outline">检查更新</button>
+            <button id="do-update" class="btn sm primary" hidden>更新</button>
+          </div>
+          <p class="update-status" id="update-status"></p>
 
           <div class="group">
             <div class="group-title">启动行为</div>
@@ -521,19 +529,6 @@
               <span class="label">恢复上次连接</span>
               <button id="restore-toggle" class="toggle" role="switch" aria-checked="false" title="下次启动自动打开上次连接的节点"></button>
             </div>
-          </div>
-
-          <div class="group">
-            <div class="group-title">内嵌 dsh 更新</div>
-            <div class="behavior">
-              <span class="label">当前版本</span>
-              <span class="version" id="dsh-version">…</span>
-            </div>
-            <div class="actions" style="margin-top:4px">
-              <button id="check-update" class="btn sm outline">检查更新</button>
-              <button id="do-update" class="btn sm primary" hidden>更新</button>
-            </div>
-            <p class="update-status" id="update-status"></p>
           </div>
 
           <p class="error" id="error"></p>
