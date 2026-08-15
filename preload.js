@@ -25,6 +25,12 @@ if (isLauncher) {
     // view switching (launcher <-> connected dsh web)
     connect: (url) => ipcRenderer.invoke('shell:connect', url),
     back: () => ipcRenderer.invoke('shell:back'),
+    reload: () => ipcRenderer.invoke('view:reload'),
+    onConnectionChanged: (callback) => {
+      const listener = (_event, detail) => callback(detail)
+      ipcRenderer.on('connection:changed', listener)
+      return () => ipcRenderer.removeListener('connection:changed', listener)
+    },
     // remote node registry (multi-instance: add / save / switch)
     remote: {
       connect: (id) => ipcRenderer.invoke('remote:connect', id),

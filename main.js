@@ -227,6 +227,7 @@ async function connectRemote(rawUrl, rawKey) {
     const view = showView('adhoc')
     await setViewCookie(view, url, session.cookie)
     if (!view.webContents.getURL().startsWith(url)) await view.webContents.loadURL(url)
+    shellWindow?.webContents.send('connection:changed', { name: new URL(url).host })
     return { ok: true, url }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -254,6 +255,7 @@ async function connectById(id) {
     await setViewCookie(view, instance.url, session.cookie)
     const alreadyLoaded = view.webContents.getURL().startsWith(instance.url)
     if (!alreadyLoaded) await view.webContents.loadURL(instance.url)
+    shellWindow?.webContents.send('connection:changed', { name: instance.name })
     console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
     return { ok: true, url: instance.url, cached: alreadyLoaded }
   } catch (error) {
@@ -427,6 +429,14 @@ ipcMain.handle('shell:connect', async (_event, url) => {
   if (!view.webContents.getURL().startsWith(target)) {
     await view.webContents.loadURL(target)
   }
+  shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
+  return { ok: true }
+})
+
+// Refresh the currently shown dsh view.
+ipcMain.handle('view:reload', () => {
+  const active = activeViewId ? views.get(activeViewId) : undefined
+  active?.webContents.reload()
   return { ok: true }
 })
 
@@ -435,6 +445,7 @@ ipcMain.handle('shell:connect', async (_event, url) => {
 ipcMain.handle('shell:back', () => {
   hideAllViews()
   shellWindow?.webContents.send('shell:backed')
+  shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
   return { ok: true }
 })
 
@@ -442,6 +453,7 @@ ipcMain.handle('shell:back', () => {
 ipcMain.handle('remote:connect', (_event, id) => connectById(String(id)))
 ipcMain.handle('remote:disconnect', () => {
   hideAllViews()
+  shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
   return { ok: true }
 })
 
