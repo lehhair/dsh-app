@@ -96,6 +96,7 @@
         overflow-y: auto;
         padding: 0 24px 24px;
       }
+      .dialog-error { color: var(--shell-danger); font-size: 12px; min-height: 16px; margin: 0 0 4px; }
       .group-title { font-size: 12px; font-weight: 500; color: var(--shell-fg-tertiary); margin: 14px 0 8px; }
       .group:first-child .group-title { margin-top: 2px; }
 
@@ -205,6 +206,7 @@
         </button>
       </div>
       <div class="dialog-body">
+        <p class="dialog-error" id="dlg-error"></p>
         <div class="group">
           <div class="group-title">当前连接</div>
           <div class="current">
@@ -241,6 +243,7 @@
       const toLauncherBtn = document.getElementById('to-launcher')
       const instancesEl = document.getElementById('instances')
       const loginItemBtn = document.getElementById('login-item')
+      const dlgError = document.getElementById('dlg-error')
 
       closeBtn.addEventListener('click', () => window.dshShell.settings.close())
 
@@ -282,8 +285,10 @@
           connect.className = 'btn primary'
           connect.textContent = '连接'
           connect.addEventListener('click', async () => {
+            dlgError.textContent = ''
             const r = await window.dshShell.remote.connect(inst.id)
             if (r.ok) await window.dshShell.settings.close()
+            else dlgError.textContent = r.error || '连接失败'
           })
           row.append(meta, connect)
           instancesEl.appendChild(row)

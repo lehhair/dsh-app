@@ -239,19 +239,25 @@ async function connectRemote(rawUrl, rawKey) {
  * Re-entering an already-loaded instance just reveals its view.
  */
 async function connectById(id) {
+  console.log(`[connect] id=${id}`)
   const instance = registry?.find(id)
   if (instance === undefined) return { ok: false, error: '实例不存在' }
   const key = registry.getSecret(id)
   if (key === undefined) return { ok: false, error: '未保存访问密钥，请编辑实例补全' }
   try {
     const session = await ensureGatewaySession(instance.url, key)
-    if (!session.ok) return session
+    if (!session.ok) {
+      console.log(`[connect] session failed: ${session.error}`)
+      return session
+    }
     const view = showView(id)
     await setViewCookie(view, instance.url, session.cookie)
     const alreadyLoaded = view.webContents.getURL().startsWith(instance.url)
     if (!alreadyLoaded) await view.webContents.loadURL(instance.url)
+    console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
     return { ok: true, url: instance.url, cached: alreadyLoaded }
   } catch (error) {
+    console.log(`[connect] error: ${error instanceof Error ? error.message : String(error)}`)
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
