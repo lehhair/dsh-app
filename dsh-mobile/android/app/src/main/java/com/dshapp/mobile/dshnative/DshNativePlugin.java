@@ -66,7 +66,7 @@ public class DshNativePlugin extends Plugin {
             };
             dispatcher.addCallback(componentActivity, backCallback);
 
-            WebView wv = new WebView(activity.getApplicationContext());
+            WebView wv = new WebView(activity);
             wv.setBackgroundColor(0xFF151517); // dsh dark ground while booting
             WebSettings settings = wv.getSettings();
             settings.setJavaScriptEnabled(true);
@@ -91,11 +91,8 @@ public class DshNativePlugin extends Plugin {
                 @Override
                 public void onPageFinished(WebView view, String pageUrl) {
                     super.onPageFinished(view, pageUrl);
-                    if (injectScript != null && !injectScript.isEmpty()) {
-                        view.evaluateJavascript(injectScript, null);
-                    }
-                    // Keep the injected button script alive across settings
-                    // panel open/close cycles (the panel re-mounts).
+                    // Inject the back-button script on every finished load
+                    // (the settings panel re-mounts between navigations).
                     if (injectScript != null && !injectScript.isEmpty()) {
                         view.evaluateJavascript(injectScript, null);
                     }
@@ -103,9 +100,9 @@ public class DshNativePlugin extends Plugin {
 
                 @Override
                 public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                    // Stay inside the WebView for same-host navigation.
-                    view.loadUrl(request.getUrl().toString());
-                    return true;
+                    // Returning false lets the WebView handle navigation
+                    // itself — returning true + loadUrl() here would recurse.
+                    return false;
                 }
             });
 
@@ -180,6 +177,53 @@ public class DshNativePlugin extends Plugin {
                 conn.disconnect();
             } catch (Exception e) {
                 call.reject("无法连接网关：" + e.getMessage());
+            }
+        });
+        t.start();
+    }
+
+    /**
+     * Probe a gateway's reachability (same semantics as the desktop health
+     * check): 200 -> online, 401 -> unauthorized (bad key), else offline.
+     * Runs off the UI thread; no CORS wall for native HTTP.
+     */
+    @PluginMethod
+    public void health(final PluginCall call) {
+        String url = call.getString("url");
+        String key = call.getString("key");
+        if (url == null) {
+            call.reject("url is required");
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                java.net.URL u = new java.net.URL(url);
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) u.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                if (key != null && !key.isEmpty()) {
+                    conn.setRequestProperty("Authorization", "Bearer " + key);
+                }
+                conn.connect();
+                int code = conn.getResponseCode();
+                // Drain whatever body came back so the connection can close.
+                java.io.InputStream in = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                if (in != null) {
+                    byte[] buf = new byte[4096];
+                    while (in.read(buf) != -1) { /* drain */ }
+                    in.close();
+                }
+                conn.disconnect();
+                JSObject result = new JSObject();
+                if (code == 200) result.put("status", "online");
+                else if (code == 401) result.put("status", "unauthorized");
+                else result.put("status", "offline");
+                call.resolve(result);
+            } catch (Exception e) {
+                JSObject result = new JSObject();
+                result.put("status", "offline");
+                call.resolve(result);
             }
         });
         t.start();

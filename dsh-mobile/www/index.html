@@ -246,6 +246,7 @@
         for (const node of nodes) {
           const row = document.createElement('div')
           row.className = 'node-row'
+          row.setAttribute('data-node-id', node.id)
           const dot = document.createElement('span')
           dot.className = `dot ${dotClass(node.status)}`
           const info = document.createElement('div')
@@ -283,9 +284,14 @@
       async function refresh() {
         nodes = await Bridge.listNodes()
         render()
+        // Real reachability per node — dots flip as each probe resolves.
         for (const node of nodes) {
-          // health fills in async; keep simple
-          node.status = 'online'
+          Bridge.health(node.id).then((h) => {
+            node.status = h.status
+            const row = listEl.querySelector(`[data-node-id="${node.id}"]`)
+            const dot = row?.querySelector('.dot')
+            if (dot) dot.className = `dot ${dotClass(node.status)}`
+          })
         }
       }
 
