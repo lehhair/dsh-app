@@ -293,6 +293,25 @@
       .toggle.on { background: var(--shell-brand); border-color: var(--shell-brand); }
       .toggle.on::after { transform: translateX(16px); background: var(--shell-bg); }
 
+      /* embedded dsh version + self-update row */
+      .behavior .version {
+        font-size: 12px;
+        color: var(--shell-fg-tertiary);
+        font-variant-numeric: tabular-nums;
+        min-width: 0;
+      }
+      .update-status {
+        margin: 0;
+        font-size: 12px;
+        color: var(--shell-fg-tertiary);
+        line-height: 1.5;
+        min-height: 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .update-status.ok { color: var(--shell-success); }
+      .update-status.err { color: var(--shell-danger); }
+
       /* remote instance rows (dsh look: divider rows, no cards) */
       .instance-row {
         padding: 14px 0;
@@ -482,6 +501,14 @@
             <button id="stop" class="btn ghost" disabled>停止</button>
             <button id="open" class="btn outline" disabled>打开界面</button>
           </div>
+          <div class="behavior" style="padding:2px 0 0">
+            <span class="label">内嵌 dsh 版本</span>
+            <span class="version" id="dsh-version">…</span>
+            <span style="flex:1"></span>
+            <button id="check-update" class="btn sm outline">检查更新</button>
+            <button id="do-update" class="btn sm primary" hidden>更新</button>
+          </div>
+          <p class="update-status" id="update-status"></p>
           <p class="error" id="error"></p>
           <pre class="log" id="log" hidden></pre>
         </section>
@@ -705,6 +732,69 @@
         autoLocalToggle.setAttribute('aria-checked', String(on))
       })
 
+      // ---- embedded dsh self-update ----
+      const dshVersionEl = document.getElementById('dsh-version')
+      const checkUpdateBtn = document.getElementById('check-update')
+      const doUpdateBtn = document.getElementById('do-update')
+      const updateStatus = document.getElementById('update-status')
+      let pendingUpdate = null // { latest } once an update is available
+
+      function setUpdateStatus(text, kind) {
+        updateStatus.textContent = text
+        updateStatus.className = `update-status ${kind ?? ''}`
+      }
+
+      window.dshShell.onUpdateLog((line) => {
+        setUpdateStatus(line, null)
+      })
+
+      async function renderDshVersion() {
+        const v = await window.dshShell.dshVersion()
+        dshVersionEl.textContent = v ? `v${v}` : '未安装'
+      }
+
+      checkUpdateBtn.addEventListener('click', async () => {
+        checkUpdateBtn.disabled = true
+        setUpdateStatus('正在检查更新…')
+        try {
+          const r = await window.dshShell.checkUpdate()
+          if (!r) {
+            setUpdateStatus('检查失败（无法连接 npm registry）', 'err')
+          } else if (r.updateAvailable) {
+            pendingUpdate = r
+            setUpdateStatus(`发现新版本 v${r.latest}（当前 v${r.current}）`, 'ok')
+            doUpdateBtn.hidden = false
+          } else {
+            pendingUpdate = null
+            setUpdateStatus(`已是最新版本 v${r.current}`, 'ok')
+            doUpdateBtn.hidden = true
+          }
+        } finally {
+          checkUpdateBtn.disabled = false
+        }
+      })
+
+      doUpdateBtn.addEventListener('click', async () => {
+        if (!pendingUpdate) return
+        doUpdateBtn.disabled = true
+        checkUpdateBtn.disabled = true
+        setUpdateStatus('正在更新…', null)
+        try {
+          const r = await window.dshShell.update(pendingUpdate.latest)
+          if (r.ok) {
+            setUpdateStatus(`更新完成：v${r.version}`, 'ok')
+            doUpdateBtn.hidden = true
+            pendingUpdate = null
+            renderDshVersion()
+          } else {
+            setUpdateStatus(`更新失败：${r.error || '未知错误'}`, 'err')
+          }
+        } finally {
+          doUpdateBtn.disabled = false
+          checkUpdateBtn.disabled = false
+        }
+      })
+
       function applyHealth(dot, status) {
         dot.className = status === 'online' ? 'dot done'
           : status === 'unauthorized' ? 'dot danger'
@@ -827,6 +917,7 @@
       renderRemoteList()
       renderRestore()
       renderAutoLocal()
+      renderDshVersion()
       // Poll local status so the badge tracks boot/exit transitions live while
       // the launcher is on screen (e.g. restore boot, or stop from another window).
       setInterval(refresh, 1500)

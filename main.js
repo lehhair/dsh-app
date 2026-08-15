@@ -19,6 +19,9 @@ const { createStore } = require('./store')
 
 const ROOT = __dirname
 const DSH_BIN = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+const DSH_PKG = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+const DSH_RUNTIME_DIR = path.join(ROOT, '.dsh-runtime')
+const NPM_CLI = path.join(ROOT, 'node_modules', 'npm', 'bin', 'npm-cli.js')
 const OVERLAY = path.join(ROOT, 'embedded-overlay.yml')
 const SHELL_HTML = path.join(ROOT, 'shell.html')
 const SETTINGS_HTML = path.join(ROOT, 'settings.html')
@@ -145,6 +148,110 @@ function stopLocal() {
     killTree(local.child.pid)
     local = null
   }
+}
+
+// ---- embedded dsh update ----
+// Reuse Electron's own Node kernel (ELECTRON_RUN_AS_NODE) to drive the
+// bundled npm-cli — no system node/npm required, so non-technical users can
+// update the embedded dsh from the UI. All npm traffic honors the user's
+// registry config (~/.npmrc) like a normal `npm install` would.
+
+/** Current installed dsh version from .dsh-runtime, or null when absent. */
+function localDshVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(DSH_PKG, 'utf8')).version ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Run bundled npm-cli under Electron's node; resolves { code, out }. */
+function runNpm(args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [NPM_CLI, ...args], {
+      cwd: options.cwd ?? DSH_RUNTIME_DIR,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let out = ''
+    const sink = (stream) => stream.on('data', (chunk) => { out += String(chunk) })
+    sink(child.stdout)
+    sink(child.stderr)
+    child.on('close', (code) => resolve({ code, out }))
+  })
+}
+
+/** Compare semver strings; 1 = a newer, -1 = a older, 0 = equal. */
+function compareVersions(a, b) {
+  const parse = (v) => {
+    const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(String(v).trim())
+    return m ? { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] } : null
+  }
+  const pa = parse(a)
+  const pb = parse(b)
+  if (!pa || !pb) return 0
+  for (const key of ['major', 'minor', 'patch']) {
+    if (pa[key] !== pb[key]) return pa[key] > pb[key] ? 1 : -1
+  }
+  // prerelease: no-pre beats any pre; otherwise lexicographic on identifiers.
+  if (!pa.pre && !pb.pre) return 0
+  if (!pa.pre) return 1
+  if (!pb.pre) return -1
+  return pa.pre === pb.pre ? 0 : pa.pre > pb.pre ? 1 : -1
+}
+
+/** Latest published version on the registry, or null on failure. */
+async function checkDshUpdate() {
+  const { code, out } = await runNpm(['view', '@deepseek-ai/dsh', 'version'])
+  const latest = out.trim().split(/\s+/).pop() ?? ''
+  if (code !== 0 || !/^\d+\.\d+\.\d+/.test(latest)) return null
+  return {
+    current: localDshVersion(),
+    latest,
+    updateAvailable: compareVersions(latest, localDshVersion() ?? '0') === 1,
+  }
+}
+
+/**
+ * Update the embedded dsh to `target` (exact version). Stops the local
+ * instance first (files are locked while running), installs, then restarts
+ * it if it was running. Progress lines stream to every shell window.
+ */
+async function updateDsh(target, windows = appWindows) {
+  const wasRunning = Boolean(local && local.child && local.child.exitCode === null)
+  const wasReady = local?.ready ?? false
+  stopLocal()
+  const notify = (line) => {
+    for (const st of windows.values()) {
+      st.win.webContents.send('dsh:update-log', line)
+      st.dialogView?.webContents.send('dsh:update-log', line)
+    }
+    console.log(`[update] ${line}`)
+  }
+  notify(`正在安装 @deepseek-ai/dsh@${target} …`)
+  const { code, out } = await runNpm(['install', `@deepseek-ai/dsh@${target}`, '--no-audit', '--no-fund', '--loglevel', 'error'])
+  const tail = out.trim().split('\n').slice(-6).join('\n')
+  if (code !== 0) {
+    notify(`安装失败（npm 退出码 ${code}）`)
+    if (tail) notify(tail)
+    if (wasRunning) void startLocal()
+    return { ok: false, error: tail || `npm 退出码 ${code}` }
+  }
+  const installed = localDshVersion()
+  notify(`安装完成：v${installed ?? target}`)
+  if (wasRunning) {
+    const result = await startLocal()
+    if (result.ok && wasReady) {
+      // Reconnect windows that were showing the local instance.
+      for (const st of windows.values()) {
+        if (st.activeViewId === 'local') {
+          void connectNode(st, 'local', result.url, 'DeepSeek Harness', '')
+        }
+      }
+    }
+  }
+  return { ok: true, version: installed ?? target }
 }
 
 // ---- gateway auth ----
@@ -465,6 +572,11 @@ ipcMain.handle('local:status', () => {
     : { running: false, starting: true, port: local.port, url: local.url }
 })
 ipcMain.handle('local:logs', () => local?.logs ?? [])
+
+// ---- embedded dsh update ----
+ipcMain.handle('dsh:version', () => localDshVersion())
+ipcMain.handle('dsh:check-update', () => checkDshUpdate())
+ipcMain.handle('dsh:update', (_event, target) => updateDsh(String(target)))
 
 // Open the local instance in the window that asked.
 ipcMain.handle('shell:connect', async (event, url) => {

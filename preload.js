@@ -12,6 +12,15 @@ if (isLauncher) {
     stopLocal: () => ipcRenderer.invoke('local:stop'),
     status: () => ipcRenderer.invoke('local:status'),
     logs: () => ipcRenderer.invoke('local:logs'),
+    // embedded dsh self-update (registry check + install via bundled npm)
+    dshVersion: () => ipcRenderer.invoke('dsh:version'),
+    checkUpdate: () => ipcRenderer.invoke('dsh:check-update'),
+    update: (target) => ipcRenderer.invoke('dsh:update', target),
+    onUpdateLog: (callback) => {
+      const listener = (_event, line) => callback(line)
+      ipcRenderer.on('dsh:update-log', listener)
+      return () => ipcRenderer.removeListener('dsh:update-log', listener)
+    },
     onExited: (callback) => {
       const listener = (_event, detail) => callback(detail)
       ipcRenderer.on('local:exited', listener)
