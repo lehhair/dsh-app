@@ -1,5 +1,6 @@
 ext {
-    minSdkVersion = 24
+    // 26 (Android 8.0): the lowest @capacitor/inappbrowser supports.
+    minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'

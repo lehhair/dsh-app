@@ -6,3 +6,5 @@ android/.gradle/
 android/capacitor-cordova-android-plugins/build/
 android/capacitor-android/build/
 *.log
+android/keystore.properties
+android/*.keystore
