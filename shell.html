@@ -216,6 +216,14 @@
         font-weight: 500;
         margin-bottom: 4px;
       }
+      .section .meta-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 16px;
+      }
+      .section .meta-row .meta { margin: 0; }
+      .section .meta-row .version { font-size: 12px; color: var(--shell-fg-tertiary); }
       .section .meta { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0 0 16px; }
       .section .hint { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0; }
       .actions { display: flex; gap: 8px; align-items: center; }
@@ -310,13 +318,7 @@
       .toggle.on { background: var(--shell-brand); border-color: var(--shell-brand); }
       .toggle.on::after { transform: translateX(16px); background: var(--shell-bg); }
 
-      /* embedded dsh version + self-update row */
-      .behavior .version {
-        font-size: 12px;
-        color: var(--shell-fg-tertiary);
-        font-variant-numeric: tabular-nums;
-        min-width: 0;
-      }
+      /* embedded dsh version + self-update status */
       .update-status {
         margin: 4px 0 0;
         font-size: 12px;
@@ -504,20 +506,19 @@
 
         <section class="section">
           <div class="row-title">本机实例 <span id="badge" class="pill">未知</span></div>
-          <p class="meta" id="meta">未启动</p>
+          <div class="meta-row">
+            <p class="meta" id="meta">未启动</p>
+            <span style="flex:1"></span>
+            <span class="version" id="dsh-version">…</span>
+            <button id="check-update" class="btn sm outline">检查更新</button>
+            <button id="do-update" class="btn sm primary" hidden>更新</button>
+          </div>
+          <p class="update-status" id="update-status"></p>
           <div class="actions" style="margin:2px 0 6px">
             <button id="start" class="btn primary">启动内嵌 dsh</button>
             <button id="stop" class="btn ghost" disabled>停止</button>
             <button id="open" class="btn outline" disabled>打开界面</button>
           </div>
-          <div class="behavior" style="padding:4px 0 0">
-            <span class="label">内嵌 dsh</span>
-            <span class="version" id="dsh-version">…</span>
-            <span style="flex:1"></span>
-            <button id="check-update" class="btn sm outline">检查更新</button>
-            <button id="do-update" class="btn sm primary" hidden>更新</button>
-          </div>
-          <p class="update-status" id="update-status"></p>
 
           <div class="group">
             <div class="group-title">启动行为</div>
