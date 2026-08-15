@@ -25,6 +25,7 @@ const ROOT = __dirname
 const DSH_BIN = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 const OVERLAY = path.join(ROOT, 'embedded-overlay.yml')
 const SHELL_HTML = path.join(ROOT, 'shell.html')
+const SETTINGS_HTML = path.join(ROOT, 'settings.html')
 const TITLEBAR_HEIGHT = 40
 
 /** The node.exe that runs the embedded dsh: bundled in packaged builds, system PATH in dev. */
@@ -287,6 +288,7 @@ async function checkRemoteHealth(url, key, timeoutMs = 5000) {
 
 // ---- window: frameless shell UI + per-instance WebContentsViews ----
 let shellWindow = null
+let settingsWindow = null // shell settings dialog (modal child window)
 const views = new Map() // 'local' | instanceId | 'adhoc' -> WebContentsView
 let activeViewId = null // which view is currently shown
 
@@ -424,6 +426,7 @@ ipcMain.handle('shell:connect', async (_event, url) => {
 // so re-entering is fast (page + per-instance disk cache kept).
 ipcMain.handle('shell:back', () => {
   hideAllViews()
+  shellWindow?.webContents.send('shell:backed')
   return { ok: true }
 })
 
@@ -480,6 +483,54 @@ ipcMain.handle('win:toggle-maximize', () => {
 })
 ipcMain.handle('win:close', () => { shellWindow?.close(); return { ok: true } })
 ipcMain.handle('win:is-maximized', () => shellWindow?.isMaximized() ?? false)
+
+// ---- settings dialog window (modal child; shell settings live here) ----
+function openSettingsWindow() {
+  if (settingsWindow) {
+    settingsWindow.focus()
+    return
+  }
+  settingsWindow = new BrowserWindow({
+    width: 420,
+    height: 560,
+    parent: shellWindow ?? undefined,
+    modal: true,
+    frame: false,
+    resizable: false,
+    backgroundColor: '#151517',
+    show: false,
+    webPreferences: {
+      preload: path.join(ROOT, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  settingsWindow.loadFile(SETTINGS_HTML)
+  settingsWindow.once('ready-to-show', () => settingsWindow.show())
+  settingsWindow.on('closed', () => { settingsWindow = null })
+}
+
+/** What the settings window should show as the current connection. */
+function currentConnection() {
+  if (activeViewId === 'local') {
+    return local ? { type: 'local', name: '本机实例', url: local.url } : { type: null }
+  }
+  if (activeViewId !== null) {
+    const instance = registry?.find(activeViewId)
+    if (instance !== undefined) return { type: 'remote', name: instance.name, url: instance.url }
+  }
+  return { type: null }
+}
+
+ipcMain.handle('settings:open', () => { openSettingsWindow(); return { ok: true } })
+ipcMain.handle('settings:close', () => { settingsWindow?.close(); return { ok: true } })
+ipcMain.handle('settings:current', () => currentConnection())
+ipcMain.handle('settings:get-login-item', () => app.getLoginItemSettings().openAtLogin === true)
+ipcMain.handle('settings:set-login-item', (_event, enabled) => {
+  app.setLoginItemSettings({ openAtLogin: enabled === true })
+  return { ok: true }
+})
 
 // ---- lifecycle ----
 app.whenReady().then(() => {

@@ -681,10 +681,9 @@
         }
       })
 
-      // settings returns to the launcher (management) panel
+      // settings opens the settings dialog window
       settingsBtn.addEventListener('click', async () => {
-        await window.dshShell.back()
-        settingsBtn.hidden = true
+        await window.dshShell.settings.open()
       })
 
       // Window controls (minimize/maximize/close) are rendered by the OS via
@@ -694,6 +693,7 @@
         setState('idle')
         settingsBtn.hidden = true
       })
+      window.dshShell.onBacked(() => { settingsBtn.hidden = true })
       refresh()
       renderRemoteList()
 

@@ -17,6 +17,11 @@ if (isLauncher) {
       ipcRenderer.on('local:exited', listener)
       return () => ipcRenderer.removeListener('local:exited', listener)
     },
+    onBacked: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('shell:backed', listener)
+      return () => ipcRenderer.removeListener('shell:backed', listener)
+    },
     // view switching (launcher <-> connected dsh web)
     connect: (url) => ipcRenderer.invoke('shell:connect', url),
     back: () => ipcRenderer.invoke('shell:back'),
@@ -29,6 +34,14 @@ if (isLauncher) {
       remove: (id) => ipcRenderer.invoke('remote:remove', id),
       setDefault: (id) => ipcRenderer.invoke('remote:set-default', id),
       health: (id) => ipcRenderer.invoke('remote:health', id),
+    },
+    // settings dialog window + shell behavior
+    settings: {
+      open: () => ipcRenderer.invoke('settings:open'),
+      close: () => ipcRenderer.invoke('settings:close'),
+      current: () => ipcRenderer.invoke('settings:current'),
+      getLoginItem: () => ipcRenderer.invoke('settings:get-login-item'),
+      setLoginItem: (enabled) => ipcRenderer.invoke('settings:set-login-item', enabled),
     },
     // live theme sync from the connected dsh page (title-bar fusion)
     onThemeSync: (callback) => {
