@@ -20,10 +20,15 @@ if (isLauncher) {
     // view switching (launcher <-> connected dsh web)
     connect: (url) => ipcRenderer.invoke('shell:connect', url),
     back: () => ipcRenderer.invoke('shell:back'),
-    // remote node connection (loopback proxy injecting the gateway key)
+    // remote node registry (multi-instance: add / save / switch)
     remote: {
-      connect: (url, key) => ipcRenderer.invoke('remote:connect', { url, key }),
+      connect: (id) => ipcRenderer.invoke('remote:connect', id),
       disconnect: () => ipcRenderer.invoke('remote:disconnect'),
+      list: () => ipcRenderer.invoke('remote:list'),
+      save: (input) => ipcRenderer.invoke('remote:save', input),
+      remove: (id) => ipcRenderer.invoke('remote:remove', id),
+      setDefault: (id) => ipcRenderer.invoke('remote:set-default', id),
+      health: (id) => ipcRenderer.invoke('remote:health', id),
     },
     // live theme sync from the connected dsh page (title-bar fusion)
     onThemeSync: (callback) => {

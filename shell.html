@@ -161,6 +161,29 @@
       .field:focus { border-color: var(--shell-brand); }
       .field::placeholder { color: var(--shell-fg-tertiary); }
 
+      /* remote instance rows (dsh look: divider rows, no cards) */
+      .instance-row {
+        padding: 14px 0;
+        border-top: 1px solid var(--shell-border);
+      }
+      .instance-row:first-child { border-top: none; }
+      .instance-row .row-title { margin-bottom: 4px; }
+      .instance-row .meta { margin: 0 0 10px; font-size: 13px; }
+      .remote-form {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--shell-border);
+      }
+
+      /* dsh Button sm (28px capsule) for row actions */
+      .btn.sm {
+        height: 28px;
+        font-size: 12px;
+        line-height: 18px;
+        padding: 0 10px;
+        border-radius: 14px;
+      }
+
       /* dsh Button (figma 1:155): h36 capsule, pad 14, gap 4, r18 */
       .btn {
         display: inline-flex;
@@ -305,14 +328,21 @@
         </section>
 
         <section class="section">
-          <div class="row-title">远程节点</div>
-          <p class="meta">连接远程 dsh（经网关，访问密钥注入）</p>
-          <div class="field-row">
-            <input id="remote-url" class="field" placeholder="http://192.168.1.233:8443" spellcheck="false" />
-            <input id="remote-key" class="field" type="password" placeholder="访问密钥" />
-            <button id="remote-connect" class="btn primary">连接</button>
+          <div class="row-title">远程节点 <button id="remote-add" class="btn sm outline">添加实例</button></div>
+          <p class="meta">连接远程 dsh（经网关，访问密钥注入）；可添加、保存、切换多个节点。</p>
+          <div id="remote-list"></div>
+          <div id="remote-form" class="remote-form" hidden>
+            <div class="field-row">
+              <input id="rf-name" class="field" placeholder="名称，如 书房网关" spellcheck="false" />
+              <input id="rf-url" class="field" placeholder="http://192.168.1.233:8443" spellcheck="false" />
+              <input id="rf-key" class="field" type="password" placeholder="访问密钥（留空保留）" />
+            </div>
+            <div class="actions" style="margin-top:10px">
+              <button id="rf-save" class="btn primary">保存</button>
+              <button id="rf-cancel" class="btn ghost">取消</button>
+            </div>
+            <p class="error" id="rf-error"></p>
           </div>
-          <p class="error" id="remote-error"></p>
         </section>
       </div>
     </main>
@@ -434,29 +464,119 @@
         if (r.ok) settingsBtn.hidden = false
       })
 
-      // remote node connection (stage-1 form; registry lands in stage 2)
-      const remoteUrlInput = document.getElementById('remote-url')
-      const remoteKeyInput = document.getElementById('remote-key')
-      const remoteConnectBtn = document.getElementById('remote-connect')
-      const remoteError = document.getElementById('remote-error')
+      // ---- remote node registry: add / save / switch ----
+      const remoteList = document.getElementById('remote-list')
+      const remoteAddBtn = document.getElementById('remote-add')
+      const remoteForm = document.getElementById('remote-form')
+      const rfName = document.getElementById('rf-name')
+      const rfUrl = document.getElementById('rf-url')
+      const rfKey = document.getElementById('rf-key')
+      const rfSave = document.getElementById('rf-save')
+      const rfCancel = document.getElementById('rf-cancel')
+      const rfError = document.getElementById('rf-error')
+      let editingId = null
 
-      remoteConnectBtn.addEventListener('click', async () => {
-        remoteError.textContent = ''
-        remoteConnectBtn.disabled = true
-        remoteConnectBtn.textContent = '连接中…'
-        const r = await window.dshShell.remote.connect(remoteUrlInput.value, remoteKeyInput.value)
-        remoteConnectBtn.disabled = false
-        remoteConnectBtn.textContent = '连接'
+      function makeBtn(text, cls, fn) {
+        const button = document.createElement('button')
+        button.className = `btn ${cls}`
+        button.textContent = text
+        button.addEventListener('click', fn)
+        return button
+      }
+
+      async function connectRemoteById(id) {
+        const r = await window.dshShell.remote.connect(id)
+        if (r.ok) settingsBtn.hidden = false
+        else rfError.textContent = r.error || '连接失败'
+      }
+
+      async function renderRemoteList() {
+        const instances = await window.dshShell.remote.list()
+        remoteList.textContent = ''
+        for (const inst of instances) {
+          const row = document.createElement('div')
+          row.className = 'instance-row'
+
+          const line1 = document.createElement('div')
+          line1.className = 'row-title'
+          const healthDot = document.createElement('span')
+          healthDot.className = 'dot'
+          healthDot.title = '检测中'
+          line1.appendChild(healthDot)
+          const name = document.createElement('span')
+          name.textContent = inst.name
+          line1.appendChild(name)
+          if (inst.isDefault) {
+            const pill = document.createElement('span')
+            pill.className = 'pill'
+            pill.textContent = '默认'
+            line1.appendChild(pill)
+          }
+          row.appendChild(line1)
+
+          const meta = document.createElement('p')
+          meta.className = 'meta'
+          meta.textContent = `${inst.url} · 密钥${inst.keyConfigured ? '已配置' : '未配置'}`
+          row.appendChild(meta)
+
+          const actions = document.createElement('div')
+          actions.className = 'actions'
+          actions.appendChild(makeBtn('连接', 'primary sm', () => connectRemoteById(inst.id)))
+          const defaultBtn = makeBtn(inst.isDefault ? '默认' : '设为默认', 'ghost sm', async () => {
+            await window.dshShell.remote.setDefault(inst.id)
+            renderRemoteList()
+          })
+          defaultBtn.disabled = inst.isDefault
+          actions.appendChild(defaultBtn)
+          actions.appendChild(makeBtn('编辑', 'ghost sm', () => openRemoteForm(inst)))
+          actions.appendChild(makeBtn('删除', 'ghost sm', async () => {
+            await window.dshShell.remote.remove(inst.id)
+            renderRemoteList()
+          }))
+          row.appendChild(actions)
+
+          remoteList.appendChild(row)
+
+          window.dshShell.remote.health(inst.id).then((h) => {
+            healthDot.className = h.status === 'online' ? 'dot done'
+              : h.status === 'unauthorized' ? 'dot error'
+              : 'dot'
+            healthDot.title = h.status === 'online' ? '在线'
+              : h.status === 'unauthorized' ? '密钥无效'
+              : '离线'
+          })
+        }
+      }
+
+      function openRemoteForm(inst) {
+        editingId = inst?.id ?? null
+        rfName.value = inst?.name ?? ''
+        rfUrl.value = inst?.url ?? ''
+        rfKey.value = ''
+        rfError.textContent = ''
+        remoteForm.hidden = false
+        rfName.focus()
+      }
+
+      remoteAddBtn.addEventListener('click', () => openRemoteForm(null))
+      rfCancel.addEventListener('click', () => { remoteForm.hidden = true })
+
+      rfSave.addEventListener('click', async () => {
+        rfError.textContent = ''
+        const r = await window.dshShell.remote.save({
+          id: editingId ?? undefined,
+          name: rfName.value,
+          url: rfUrl.value,
+          key: rfKey.value,
+        })
         if (r.ok) {
-          settingsBtn.hidden = false
-          remoteUrlInput.value = ''
-          remoteKeyInput.value = ''
+          remoteForm.hidden = true
+          editingId = null
+          renderRemoteList()
         } else {
-          remoteError.textContent = r.error || '连接失败'
+          rfError.textContent = r.error || '保存失败'
         }
       })
-      remoteUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') remoteConnectBtn.click() })
-      remoteKeyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') remoteConnectBtn.click() })
 
       // settings returns to the launcher (management) panel
       settingsBtn.addEventListener('click', async () => {
@@ -472,6 +592,7 @@
         settingsBtn.hidden = true
       })
       refresh()
+      renderRemoteList()
 
       // inactive-window dimming (mainstream title-bar behavior)
       const syncActive = () => document.body.classList.toggle('inactive', !document.hasFocus())

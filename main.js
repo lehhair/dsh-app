@@ -12,13 +12,15 @@
 // Embedded run:  node.exe lib/bin.js --patch <overlay> --profile web --port <free>
 // Remote nodes (local proxy injecting Bearer) land in a later phase.
 
-const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron')
+const { app, BrowserWindow, WebContentsView, ipcMain, safeStorage } = require('electron')
 const path = require('node:path')
 const { spawn, exec } = require('node:child_process')
 const http = require('node:http')
+const https = require('node:https')
 const net = require('node:net')
 const fs = require('node:fs')
-const { startRemoteProxy, stopRemoteProxy } = require('./proxy')
+const { startRemoteProxy, stopRemoteProxy, parseTarget } = require('./proxy')
+const { createRegistry } = require('./registry')
 
 const ROOT = __dirname
 const DSH_BIN = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
@@ -87,6 +89,7 @@ function rgbToHex(value) {
 // ---- embedded local instance state ----
 let local = null // { child, port, url, logs: string[] }
 let remote = null // { port, url } — loopback proxy for a remote node
+let registry = null // remote-node registry (instances + encrypted keys)
 
 function capture(child, label) {
   const sink = (stream) => stream.on('data', (chunk) => {
@@ -173,6 +176,45 @@ async function connectRemote(rawUrl, rawKey) {
     await disconnectRemote()
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+/** Connect by registry id (resolves the stored URL + decrypted key). */
+async function connectById(id) {
+  const instance = registry?.find(id)
+  if (instance === undefined) return { ok: false, error: '实例不存在' }
+  const key = registry.getSecret(id)
+  if (key === undefined) return { ok: false, error: '未保存访问密钥，请编辑实例补全' }
+  return connectRemote(instance.url, key)
+}
+
+/** Probe one remote gateway's health with its stored key. */
+async function checkRemoteHealth(url, key, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    let target
+    try {
+      target = parseTarget(url)
+    } catch {
+      resolve('offline')
+      return
+    }
+    const transport = target.protocol === 'https' ? https : http
+    const req = transport.get({
+      host: target.host,
+      port: target.port,
+      path: '/',
+      headers: { authorization: `Bearer ${key}` },
+    }, (res) => {
+      res.resume()
+      if (res.statusCode === 200) resolve('online')
+      else if (res.statusCode === 401) resolve('unauthorized')
+      else resolve('offline')
+    })
+    req.on('error', () => resolve('offline'))
+    req.setTimeout(timeoutMs, () => {
+      req.destroy()
+      resolve('offline')
+    })
+  })
 }
 
 // ---- window: frameless shell UI + WebContentsView for the dsh page ----
@@ -272,11 +314,40 @@ ipcMain.handle('shell:back', async () => {
 })
 
 // Remote node connection (loopback proxy injecting Bearer).
-ipcMain.handle('remote:connect', (_event, { url, key }) => connectRemote(url, key))
+ipcMain.handle('remote:connect', (_event, id) => connectById(String(id)))
 ipcMain.handle('remote:disconnect', async () => {
   await disconnectRemote()
   dshView?.setVisible(false)
   return { ok: true }
+})
+
+// Remote-node registry (keys stay in the main process; views are redacted).
+ipcMain.handle('remote:list', () => registry?.view() ?? [])
+ipcMain.handle('remote:save', (_event, input) => {
+  try {
+    return { ok: true, instance: registry.save(input) }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+ipcMain.handle('remote:remove', (_event, id) => {
+  registry?.remove(String(id))
+  return { ok: true }
+})
+ipcMain.handle('remote:set-default', (_event, id) => {
+  try {
+    registry?.setDefault(String(id))
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+ipcMain.handle('remote:health', async (_event, id) => {
+  const instance = registry?.find(String(id))
+  if (instance === undefined) return { status: 'offline' }
+  const key = registry.getSecret(instance.id)
+  if (key === undefined) return { status: 'unauthorized' }
+  return { status: await checkRemoteHealth(instance.url, key) }
 })
 
 // Custom title bar window controls.
@@ -292,6 +363,7 @@ ipcMain.handle('win:is-maximized', () => shellWindow?.isMaximized() ?? false)
 
 // ---- lifecycle ----
 app.whenReady().then(() => {
+  registry = createRegistry(app.getPath('userData'), safeStorage)
   createWindow()
   if (process.env.DSH_AUTOSTART === '1') {
     // DSH_REMOTE_URL [+ DSH_REMOTE_KEY] boots straight into a remote node;
