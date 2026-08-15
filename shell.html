@@ -422,6 +422,10 @@
         <section class="section">
           <div class="row-title">本机实例 <span id="badge" class="pill">未知</span></div>
           <p class="meta" id="meta">未启动</p>
+          <div class="behavior" style="padding:2px 0 10px">
+            <span class="label">启动时自动开启本机实例</span>
+            <button id="auto-local-toggle" class="toggle" role="switch" aria-checked="false" title="应用启动时自动运行内嵌 dsh（不自动进入）"></button>
+          </div>
           <div class="actions">
             <button id="start" class="btn primary">启动内嵌 dsh</button>
             <button id="stop" class="btn ghost" disabled>停止</button>
@@ -614,6 +618,7 @@
       const remoteSearch = document.getElementById('remote-search')
       const remoteError = document.getElementById('remote-error')
       const restoreToggle = document.getElementById('restore-toggle')
+      const autoLocalToggle = document.getElementById('auto-local-toggle')
       const healthCache = new Map() // instanceId -> { status, at } (30s TTL)
 
       async function renderRestore() {
@@ -626,6 +631,18 @@
         await window.dshShell.settings.setRestore(on)
         restoreToggle.classList.toggle('on', on)
         restoreToggle.setAttribute('aria-checked', String(on))
+      })
+
+      async function renderAutoLocal() {
+        const on = await window.dshShell.settings.getAutoLocal()
+        autoLocalToggle.classList.toggle('on', on)
+        autoLocalToggle.setAttribute('aria-checked', String(on))
+      }
+      autoLocalToggle.addEventListener('click', async () => {
+        const on = !autoLocalToggle.classList.contains('on')
+        await window.dshShell.settings.setAutoLocal(on)
+        autoLocalToggle.classList.toggle('on', on)
+        autoLocalToggle.setAttribute('aria-checked', String(on))
       })
 
       function applyHealth(dot, status) {
@@ -761,6 +778,7 @@
       refresh()
       renderRemoteList()
       renderRestore()
+      renderAutoLocal()
 
       // inactive-window dimming (mainstream title-bar behavior)
       const syncActive = () => document.body.classList.toggle('inactive', !document.hasFocus())

@@ -50,6 +50,8 @@ if (isLauncher) {
       setLoginItem: (enabled) => ipcRenderer.invoke('settings:set-login-item', enabled),
       getRestore: () => ipcRenderer.invoke('settings:get-restore'),
       setRestore: (enabled) => ipcRenderer.invoke('settings:set-restore', enabled),
+      getAutoLocal: () => ipcRenderer.invoke('settings:get-auto-local'),
+      setAutoLocal: (enabled) => ipcRenderer.invoke('settings:set-auto-local', enabled),
     },
     // live theme sync from the connected dsh page (title-bar fusion)
     onThemeSync: (callback) => {

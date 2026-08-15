@@ -138,6 +138,33 @@
       }
       .pill.on { color: var(--shell-fg); border-color: var(--shell-brand); }
 
+      /* state dot (green when running) */
+      .dot {
+        position: relative;
+        display: inline-block;
+        flex: none;
+        width: 10px;
+        height: 10px;
+        min-width: 10px;
+        min-height: 10px;
+      }
+      .dot::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.1;
+      }
+      .dot::after {
+        content: '';
+        position: absolute;
+        inset: 2px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .dot.done { color: var(--shell-success); }
+
       .btn {
         display: inline-flex;
         align-items: center;
@@ -221,6 +248,15 @@
 
         <div class="group">
           <div class="group-title">实例</div>
+          <div class="instance-row" id="local-instance">
+            <span class="dot" id="local-dot"></span>
+            <div class="meta">
+              <div class="name">本机实例</div>
+              <div class="url" id="local-url">未启动</div>
+            </div>
+            <button id="local-toggle" class="btn primary">启动</button>
+            <button id="local-enter" class="btn outline" disabled>进入</button>
+          </div>
           <div id="instances"></div>
         </div>
 
@@ -248,6 +284,36 @@
       const instancesEl = document.getElementById('instances')
       const loginItemBtn = document.getElementById('login-item')
       const dlgError = document.getElementById('dlg-error')
+
+      // ---- local embedded instance row ----
+      const localDot = document.getElementById('local-dot')
+      const localUrl = document.getElementById('local-url')
+      const localToggle = document.getElementById('local-toggle')
+      const localEnter = document.getElementById('local-enter')
+
+      async function renderLocal() {
+        const s = await window.dshShell.status()
+        localDot.className = s.running ? 'dot done' : 'dot'
+        localUrl.textContent = s.running ? s.url : '未启动'
+        localToggle.textContent = s.running ? '停止' : '启动'
+        localToggle.className = `btn ${s.running ? 'outline' : 'primary'}`
+        localEnter.disabled = !s.running
+      }
+
+      localToggle.addEventListener('click', async () => {
+        const s = await window.dshShell.status()
+        if (s.running) await window.dshShell.stopLocal()
+        else await window.dshShell.startLocal()
+        renderLocal()
+      })
+
+      localEnter.addEventListener('click', async () => {
+        const s = await window.dshShell.status()
+        if (s.running) {
+          await window.dshShell.connect(s.url)
+          await window.dshShell.settings.close()
+        }
+      })
 
       closeBtn.addEventListener('click', () => window.dshShell.settings.close())
 
@@ -344,6 +410,7 @@
       })
 
       renderCurrent()
+      renderLocal()
       renderInstances()
       renderLoginItem()
       renderRestore()

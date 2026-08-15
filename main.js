@@ -229,7 +229,7 @@ async function connectRemote(rawUrl, rawKey) {
     const view = viewFor('adhoc')
     await setViewCookie(view, url, session.cookie)
     showView('adhoc')
-    if (!view.webContents.getURL().startsWith(url)) void view.webContents.loadURL(url)
+    if (!view.webContents.getURL().startsWith(url)) void view.webContents.loadURL(url).catch(() => {})
     shellWindow?.webContents.send('connection:changed', { name: new URL(url).host })
     return { ok: true, url }
   } catch (error) {
@@ -260,7 +260,7 @@ async function connectById(id) {
     // Reveal immediately (dark ground + the page's own loading UI), then
     // load without blocking the click: no dead seconds on the launcher.
     showView(id)
-    if (!alreadyLoaded) void view.webContents.loadURL(instance.url)
+    if (!alreadyLoaded) void view.webContents.loadURL(instance.url).catch(() => {})
     shellWindow?.webContents.send('connection:changed', { name: instance.name })
     shellStore?.set('lastNode', { type: 'remote', id })
     console.log(`[connect] ok ${instance.url} cached=${alreadyLoaded}`)
@@ -438,7 +438,7 @@ ipcMain.handle('shell:connect', async (_event, url) => {
   const target = String(url)
   const view = viewFor('local')
   showView('local')
-  if (!view.webContents.getURL().startsWith(target)) void view.webContents.loadURL(target)
+  if (!view.webContents.getURL().startsWith(target)) void view.webContents.loadURL(target).catch(() => {})
   shellWindow?.webContents.send('connection:changed', { name: 'DeepSeek Harness' })
   shellStore?.set('lastNode', { type: 'local' })
   return { ok: true }
@@ -580,6 +580,11 @@ ipcMain.handle('settings:set-restore', (_event, enabled) => {
   shellStore?.set('restoreLastNode', enabled === true)
   return { ok: true }
 })
+ipcMain.handle('settings:get-auto-local', () => shellStore?.get('autoStartLocal') === true)
+ipcMain.handle('settings:set-auto-local', (_event, enabled) => {
+  shellStore?.set('autoStartLocal', enabled === true)
+  return { ok: true }
+})
 
 // ---- lifecycle ----
 app.whenReady().then(() => {
@@ -597,25 +602,34 @@ app.whenReady().then(() => {
       startLocal().then(async (result) => {
         if (result.ok) {
           const view = showView('local')
-          await view.webContents.loadURL(result.url)
+          await view.webContents.loadURL(result.url).catch(() => {})
         }
       })
     }
-  } else if (shellStore.get('restoreLastNode') === true) {
+  } else {
+    // Background-boot the embedded local instance when enabled (no entry —
+    // "打开界面" then is instant), independent of restore-last-node.
+    if (shellStore.get('autoStartLocal') === true) {
+      startLocal().then((result) => {
+        if (result.ok) console.log(`[auto-local] running ${result.url}`)
+      })
+    }
     // Restore the last connected node on launch.
-    const last = shellStore.get('lastNode')
-    if (last?.type === 'remote' && typeof last.id === 'string') {
-      connectById(last.id).then((result) => {
-        console.log(`[restore] ${result.ok ? `connected ${result.url}` : `failed: ${result.error}`}`)
-      })
-    } else if (last?.type === 'local') {
-      startLocal().then(async (result) => {
-        if (result.ok) {
-          const view = showView('local')
-          await view.webContents.loadURL(result.url)
-          console.log('[restore] local connected')
-        }
-      })
+    if (shellStore.get('restoreLastNode') === true) {
+      const last = shellStore.get('lastNode')
+      if (last?.type === 'remote' && typeof last.id === 'string') {
+        connectById(last.id).then((result) => {
+          console.log(`[restore] ${result.ok ? `connected ${result.url}` : `failed: ${result.error}`}`)
+        })
+      } else if (last?.type === 'local') {
+        startLocal().then(async (result) => {
+          if (result.ok) {
+            const view = showView('local')
+            await view.webContents.loadURL(result.url).catch(() => {})
+            console.log('[restore] local connected')
+          }
+        })
+      }
     }
   }
 })
