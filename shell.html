@@ -243,6 +243,8 @@
         flex-shrink: 0;
         width: 10px;
         height: 10px;
+        min-width: 10px;
+        min-height: 10px;
       }
       .dot::before {
         content: '';
@@ -260,7 +262,10 @@
         background: currentColor;
       }
       .dot.done { color: var(--shell-success); }
-      .dot.error { color: var(--shell-danger); }
+      /* `danger`, not `error`: `error` collides with the generic message
+         style (.error min-height: 20px) and would shear the dot into an
+         ellipse. */
+      .dot.danger { color: var(--shell-danger); }
       .pill svg { width: 12px; height: 12px; display: block; }
       .pill svg rect { fill: currentColor; opacity: 0.15; animation: dsh-state-dot-chase 1s infinite; }
       @keyframes dsh-state-dot-chase {
@@ -543,7 +548,7 @@
 
           window.dshShell.remote.health(inst.id).then((h) => {
             healthDot.className = h.status === 'online' ? 'dot done'
-              : h.status === 'unauthorized' ? 'dot error'
+              : h.status === 'unauthorized' ? 'dot danger'
               : 'dot'
             healthDot.title = h.status === 'online' ? '在线'
               : h.status === 'unauthorized' ? '密钥无效'
