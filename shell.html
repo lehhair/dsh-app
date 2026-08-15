@@ -58,9 +58,11 @@
         mask: url(fish.svg) no-repeat center / contain;
       }
 
-      /* ---- title bar: same ground as the page, no dividing line (fusion) ---- */
+      /* ---- title bar: fused with the page ground; compact 40px, window
+         controls as rounded hover chips (mainstream Electron apps: VS Code /
+         Slack / Obsidian style), inactive-window dimming ---- */
       .titlebar {
-        height: 44px;
+        height: 40px;
         flex: none;
         display: flex;
         align-items: center;
@@ -70,33 +72,38 @@
         -webkit-app-region: drag;
       }
       .titlebar .status {
-        font-size: 12px;
-        color: var(--shell-fg-tertiary);
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--shell-fg-secondary);
+        padding: 0 14px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
         min-width: 0;
-        padding: 0 16px;
       }
       .titlebar .spacer { flex: 1; }
-      .titlebar button {
+      .titlebar .win-btn {
         -webkit-app-region: no-drag;
-        width: 46px;
-        height: 100%;
+        width: 40px;
+        height: 32px;
+        margin: 0 2px;
         border: none;
+        border-radius: 7px;
         background: transparent;
         color: var(--shell-fg-secondary);
         display: inline-flex;
         align-items: center;
         justify-content: center;
         cursor: default;
+        transition: background-color 0.12s ease, color 0.12s ease;
       }
-      .titlebar button:disabled { opacity: 0.35; }
-      .titlebar button:hover:not(:disabled) { background: var(--shell-hover); color: var(--shell-fg); }
-      .titlebar button.close:hover:not(:disabled) { background: var(--shell-danger); color: #fff; }
-      .titlebar button svg { display: block; }
-      .titlebar button.btn-settings { width: 44px; }
-      .titlebar button.btn-settings svg { width: 14px; height: 14px; }
+      .titlebar .win-btn svg { width: 12px; height: 12px; display: block; }
+      .titlebar .win-btn.settings { width: 34px; }
+      .titlebar .win-btn.settings svg { width: 14px; height: 14px; }
+      .titlebar .win-btn:hover:not(:disabled) { background: var(--shell-hover); color: var(--shell-fg); }
+      .titlebar .win-btn.close:hover:not(:disabled) { background: var(--shell-danger); color: #fff; }
+      .titlebar .win-btn:disabled { opacity: 0.35; }
+      body.inactive .titlebar { opacity: 0.6; }
 
       /* ---- launcher content (dsh look: no card containers) ---- */
       .content {
@@ -177,23 +184,23 @@
   </head>
   <body>
     <header class="titlebar">
-      <span class="status" id="title-status"></span>
+      <span class="status" id="title-status">DeepSeek Harness</span>
       <div class="spacer"></div>
-      <button id="settings" class="btn-settings" title="设置" hidden>
+      <button id="settings" class="win-btn settings" title="设置" hidden>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
           <circle cx="8" cy="8" r="2.4"/>
           <path d="M8 1.4v1.8M8 12.8v1.8M1.4 8h1.8M12.8 8h1.8M3.33 3.33l1.27 1.27M11.4 11.4l1.27 1.27M12.67 3.33l-1.27 1.27M4.6 11.4l-1.27 1.27"/>
         </svg>
       </button>
-      <button id="min" title="最小化">
-        <svg viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
+      <button id="min" class="win-btn" title="最小化">
+        <svg viewBox="0 0 12 12"><path d="M1.5 6h9" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
       </button>
-      <button id="max" title="最大化">
-        <svg class="icon-max" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"/></svg>
-        <svg class="icon-restore" viewBox="0 0 10 10" hidden><path d="M2.5 2.5v-2h6v6h-2" fill="none" stroke="currentColor"/><rect x="0.5" y="2.5" width="6" height="6" fill="none" stroke="currentColor"/></svg>
+      <button id="max" class="win-btn" title="最大化">
+        <svg class="icon-max" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+        <svg class="icon-restore" viewBox="0 0 12 12" hidden><path d="M4 4V1.5h6.5V8H8" fill="none" stroke="currentColor" stroke-width="1.1"/><rect x="1.5" y="4" width="6.5" height="6.5" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
       </button>
-      <button id="close" class="close" title="关闭">
-        <svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
+      <button id="close" class="win-btn close" title="关闭">
+        <svg viewBox="0 0 12 12"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
       </button>
     </header>
 
@@ -267,7 +274,7 @@
         stopBtn.disabled = !running
         openBtn.disabled = !running
         startBtn.disabled = running
-        titleStatus.textContent = running ? url : 'dsh app'
+        titleStatus.textContent = running ? url : 'DeepSeek Harness'
       }
 
       async function refresh() {
@@ -335,6 +342,12 @@
         settingsBtn.hidden = true
       })
       refresh()
+
+      // inactive-window dimming (mainstream title-bar behavior)
+      const syncActive = () => document.body.classList.toggle('inactive', !document.hasFocus())
+      window.addEventListener('focus', syncActive)
+      window.addEventListener('blur', syncActive)
+      syncActive()
     </script>
   </body>
 </html>

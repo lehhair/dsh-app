@@ -23,7 +23,7 @@ const ROOT = __dirname
 const DSH_BIN = path.join(ROOT, '.dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 const OVERLAY = path.join(ROOT, 'embedded-overlay.yml')
 const SHELL_HTML = path.join(ROOT, 'shell.html')
-const TITLEBAR_HEIGHT = 44
+const TITLEBAR_HEIGHT = 40
 
 /** The node.exe that runs the embedded dsh: bundled in packaged builds, system PATH in dev. */
 function resolveNodeExe() {
