@@ -138,8 +138,6 @@
         border-top: 1px solid var(--shell-border);
       }
       .group-title { font-size: 12px; font-weight: 500; color: var(--shell-fg-tertiary); margin: 14px 0 8px; }
-
-      /* search field with leading magnifier (launcher-consistent) */
       .list-head {
         display: flex;
         align-items: center;
@@ -147,18 +145,44 @@
         margin: 14px 0 8px;
       }
       .list-head .group-title { margin: 0; }
-      .search-wrap { position: relative; flex: 1; min-width: 0; }
-      .search-wrap svg {
-        position: absolute;
-        left: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 14px;
-        height: 14px;
-        color: var(--shell-fg-tertiary);
-        pointer-events: none;
+
+      /* dsh Input atom (ui-primitives Input): wrap + icon + borderless input,
+         container border highlights on focus-within */
+      .search {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 8px;
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--shell-border);
+        border-radius: 8px;
+        background: var(--shell-layer);
+        transition: border-color 0.12s ease;
       }
-      .search-wrap .field { padding-left: 32px; margin-bottom: 0; width: 100%; min-width: 0; }
+      .search:focus-within { border-color: var(--shell-brand); }
+      .search-icon {
+        display: inline-flex;
+        width: 16px;
+        height: 16px;
+        align-items: center;
+        justify-content: center;
+        color: var(--shell-fg-tertiary);
+        flex: none;
+      }
+      .search-icon svg { width: 14px; height: 14px; display: block; }
+      .search-input {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 13px;
+        line-height: 20px;
+        color: var(--shell-fg);
+      }
+      .search-input::placeholder { color: var(--shell-fg-tertiary); }
       .group:first-child .group-title { margin-top: 2px; }
 
       .current {
@@ -324,10 +348,10 @@
       <div class="dialog-scroll">
         <div class="list-head">
           <div class="group-title">远程实例</div>
-          <div class="search-wrap">
-            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg>
-            <input id="inst-search" class="field" placeholder="搜索" spellcheck="false" />
-          </div>
+          <span class="search">
+            <span class="search-icon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg></span>
+            <input id="inst-search" class="search-input" placeholder="搜索" spellcheck="false" />
+          </span>
         </div>
         <div id="instances"></div>
       </div>
