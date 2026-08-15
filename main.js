@@ -221,6 +221,15 @@ async function checkRemoteHealth(url, key, timeoutMs = 5000) {
 let shellWindow = null
 let dshView = null
 
+/** F12 opens DevTools for the given webContents (dev aid for both pages). */
+function attachDevTools(webContents) {
+  webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      webContents.openDevTools({ mode: 'detach' })
+    }
+  })
+}
+
 function layoutDshView() {
   if (!shellWindow || !dshView) return
   const [width, height] = shellWindow.getContentSize()
@@ -251,6 +260,7 @@ function createWindow() {
     },
   })
   shellWindow.loadFile(SHELL_HTML)
+  attachDevTools(shellWindow.webContents)
 
   // The connected dsh web renders here, below the title bar; the shell UI
   // (title bar + launcher panel) stays in the window's own webContents.
@@ -266,6 +276,7 @@ function createWindow() {
   shellWindow.contentView.addChildView(dshView)
   dshView.setVisible(false)
   layoutDshView()
+  attachDevTools(dshView.webContents)
 
   // Forward sampled theme tokens to the shell UI (theme sync / fusion),
   // and keep the OS-rendered window controls on the same palette.
