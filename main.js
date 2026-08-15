@@ -78,7 +78,7 @@ function rgbToHex(value) {
 }
 
 // ---- embedded local instance ----
-let local = null // { child, port, url, logs: string[] }
+let local = null // { child, port, url, logs: string[], ready: boolean }
 let registry = null
 let shellStore = null
 
@@ -95,7 +95,18 @@ function capture(child, label) {
 
 async function startLocal() {
   if (local && local.child && local.child.exitCode === null) {
-    return { ok: true, port: local.port, url: local.url }
+    // Already running or still booting — wait until it answers health checks
+    // so callers never connect to a half-started server. The spawning caller
+    // sets local.ready once healthy; poll it here.
+    const deadline = Date.now() + 90_000
+    while (local && !local.ready) {
+      if (local.child.exitCode !== null || Date.now() > deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    if (local && local.child && local.child.exitCode === null && local.ready) {
+      return { ok: true, port: local.port, url: local.url }
+    }
+    // fall through: the running instance died or never became healthy — start fresh
   }
   const port = await pickFreePort()
   const url = `http://127.0.0.1:${port}/`
@@ -109,7 +120,7 @@ async function startLocal() {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  local = { child, port, url, logs: [] }
+  local = { child, port, url, logs: [], ready: false }
   capture(child, 'out')
   capture(child, 'err')
   child.on('exit', (code) => {
@@ -120,6 +131,7 @@ async function startLocal() {
     await waitForHealth(url)
     await new Promise((resolve) => setTimeout(resolve, 1000))
     if (child.exitCode !== null) throw new Error(`dsh exited during startup (code ${child.exitCode})`)
+    local.ready = true
     return { ok: true, port, url }
   } catch (error) {
     const logs = local?.logs ?? []
@@ -389,9 +401,12 @@ function createAppWindow() {
 // ---- ipc ----
 ipcMain.handle('local:start', () => startLocal())
 ipcMain.handle('local:stop', () => { stopLocal(); return { ok: true } })
-ipcMain.handle('local:status', () => local
-  ? { running: true, port: local.port, url: local.url }
-  : { running: false })
+ipcMain.handle('local:status', () => {
+  if (!local || !local.child || local.child.exitCode !== null) return { running: false }
+  return local.ready
+    ? { running: true, port: local.port, url: local.url }
+    : { running: false, starting: true, port: local.port, url: local.url }
+})
 ipcMain.handle('local:logs', () => local?.logs ?? [])
 
 // Open the local instance in the window that asked.

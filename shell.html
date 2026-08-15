@@ -581,7 +581,9 @@
         else if (status === 'starting') setBadge('ongoing', '启动中')
         else if (status === 'error') setBadge('error', '启动失败')
         else setBadge(null, '已停止')
-        meta.textContent = status === 'running' ? `http://127.0.0.1:${port}/` : '未启动'
+        meta.textContent = status === 'running' ? `http://127.0.0.1:${port}/`
+          : status === 'starting' ? '正在启动…'
+          : '未启动'
         const running = status === 'running'
         stopBtn.disabled = !running
         openBtn.disabled = !running
@@ -590,7 +592,7 @@
 
       async function refresh() {
         const s = await window.dshShell.status()
-        setState(s.running ? 'running' : 'idle', s.port, s.url)
+        setState(s.starting ? 'starting' : s.running ? 'running' : 'idle', s.port, s.url)
         if (s.running) {
           const logs = await window.dshShell.logs()
           log.hidden = false
@@ -816,6 +818,9 @@
       renderRemoteList()
       renderRestore()
       renderAutoLocal()
+      // Poll local status so the badge tracks boot/exit transitions live while
+      // the launcher is on screen (e.g. restore boot, or stop from another window).
+      setInterval(refresh, 1500)
 
       // inactive-window dimming (mainstream title-bar behavior)
       const syncActive = () => document.body.classList.toggle('inactive', !document.hasFocus())

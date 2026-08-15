@@ -359,9 +359,10 @@
       async function renderLocal() {
         const s = await window.dshShell.status()
         localDot.className = s.running ? 'dot done' : 'dot'
-        localUrl.textContent = s.running ? s.url : '未启动'
-        localToggle.textContent = s.running ? '停止' : '启动'
+        localUrl.textContent = s.running ? s.url : s.starting ? '正在启动…' : '未启动'
+        localToggle.textContent = s.running ? '停止' : s.starting ? '启动中' : '启动'
         localToggle.className = `btn ${s.running ? 'outline' : 'primary'}`
+        localToggle.disabled = s.starting
         localEnter.disabled = !s.running
       }
 
