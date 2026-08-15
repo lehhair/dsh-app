@@ -13,7 +13,6 @@ const TOKENS = [
   '--dsw-alias-bg-base',
   '--dsw-alias-bg-layer-1',
   '--dsw-alias-bg-layer-2',
-  '--dsw-specific-sidebar-fill',
   '--dsw-alias-label-primary',
   '--dsw-alias-label-primary-foreground',
   '--dsw-alias-label-secondary',
