@@ -263,17 +263,17 @@ async function connectById(id) {
 /** Probe one remote gateway's health with its stored key. */
 async function checkRemoteHealth(url, key, timeoutMs = 5000) {
   return new Promise((resolve) => {
-    let target
+    let parsed
     try {
-      target = parseTarget(url)
+      parsed = new URL(url)
     } catch {
       resolve('offline')
       return
     }
-    const transport = target.protocol === 'https' ? https : http
+    const transport = parsed.protocol === 'https:' ? https : http
     const req = transport.get({
-      host: target.host,
-      port: target.port,
+      host: parsed.hostname,
+      port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
       path: '/',
       headers: { authorization: `Bearer ${key}` },
     }, (res) => {
