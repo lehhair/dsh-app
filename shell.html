@@ -219,11 +219,23 @@
       .section .meta-row {
         display: flex;
         align-items: center;
-        gap: 8px;
+        flex-wrap: wrap;
+        gap: 4px 8px;
         margin: 0 0 16px;
       }
       .section .meta-row .meta { margin: 0; }
       .section .meta-row .version { font-size: 12px; color: var(--shell-fg-tertiary); }
+      .section .meta-row .update-status {
+        margin: 0;
+        font-size: 12px;
+        color: var(--shell-fg-tertiary);
+        line-height: 1.5;
+        max-width: 100%;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .section .meta-row .update-status.ok { color: var(--shell-success); }
+      .section .meta-row .update-status.err { color: var(--shell-danger); }
       .section .meta { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0 0 16px; }
       .section .hint { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0; }
       .actions { display: flex; gap: 8px; align-items: center; }
@@ -317,19 +329,6 @@
       }
       .toggle.on { background: var(--shell-brand); border-color: var(--shell-brand); }
       .toggle.on::after { transform: translateX(16px); background: var(--shell-bg); }
-
-      /* embedded dsh version + self-update status */
-      .update-status {
-        margin: 4px 0 0;
-        font-size: 12px;
-        color: var(--shell-fg-tertiary);
-        line-height: 1.5;
-        min-height: 0;
-        white-space: pre-wrap;
-        word-break: break-all;
-      }
-      .update-status.ok { color: var(--shell-success); }
-      .update-status.err { color: var(--shell-danger); }
 
       /* remote instance rows (dsh look: divider rows, no cards) */
       .instance-row {
@@ -512,8 +511,8 @@
             <span class="version" id="dsh-version">…</span>
             <button id="check-update" class="btn sm outline">检查更新</button>
             <button id="do-update" class="btn sm primary" hidden>更新</button>
+            <span class="update-status" id="update-status"></span>
           </div>
-          <p class="update-status" id="update-status"></p>
           <div class="actions" style="margin:2px 0 6px">
             <button id="start" class="btn primary">启动内嵌 dsh</button>
             <button id="stop" class="btn ghost" disabled>停止</button>
