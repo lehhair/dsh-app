@@ -224,9 +224,7 @@
         margin: 0 0 16px;
       }
       .section .meta-row .meta { margin: 0; }
-      .section .meta-row .version { font-size: 12px; color: var(--shell-fg-tertiary); }
-      .section .meta-row .update-status {
-        margin: 0;
+      .section .meta-row .version {
         font-size: 12px;
         color: var(--shell-fg-tertiary);
         line-height: 1.5;
@@ -234,8 +232,8 @@
         white-space: pre-wrap;
         word-break: break-all;
       }
-      .section .meta-row .update-status.ok { color: var(--shell-success); }
-      .section .meta-row .update-status.err { color: var(--shell-danger); }
+      .section .meta-row .version.ok { color: var(--shell-success); }
+      .section .meta-row .version.err { color: var(--shell-danger); }
       .section .meta { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0 0 16px; }
       .section .hint { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0; }
       .actions { display: flex; gap: 8px; align-items: center; }
@@ -511,7 +509,6 @@
             <span class="version" id="dsh-version">…</span>
             <button id="check-update" class="btn sm outline">检查更新</button>
             <button id="do-update" class="btn sm primary" hidden>更新</button>
-            <span class="update-status" id="update-status"></span>
           </div>
           <div class="actions" style="margin:2px 0 6px">
             <button id="start" class="btn primary">启动内嵌 dsh</button>
@@ -758,12 +755,14 @@
       const dshVersionEl = document.getElementById('dsh-version')
       const checkUpdateBtn = document.getElementById('check-update')
       const doUpdateBtn = document.getElementById('do-update')
-      const updateStatus = document.getElementById('update-status')
       let pendingUpdate = null // { latest } once an update is available
 
+      // Status feedback replaces the version text in the meta row (the
+      // version slot itself), colored by outcome; a plain version shows
+      // default tertiary ink.
       function setUpdateStatus(text, kind) {
-        updateStatus.textContent = text
-        updateStatus.className = `update-status ${kind ?? ''}`
+        dshVersionEl.textContent = text
+        dshVersionEl.className = `version ${kind ?? ''}`
       }
 
       window.dshShell.onUpdateLog((line) => {
@@ -773,6 +772,7 @@
       async function renderDshVersion() {
         const v = await window.dshShell.dshVersion()
         dshVersionEl.textContent = v ? `v${v}` : '未安装'
+        dshVersionEl.className = 'version'
       }
 
       checkUpdateBtn.addEventListener('click', async () => {
@@ -804,10 +804,9 @@
         try {
           const r = await window.dshShell.update(pendingUpdate.latest)
           if (r.ok) {
-            setUpdateStatus(`更新完成：v${r.version}`, 'ok')
+            setUpdateStatus(`已更新至 v${r.version}`, 'ok')
             doUpdateBtn.hidden = true
             pendingUpdate = null
-            renderDshVersion()
           } else {
             setUpdateStatus(`更新失败：${r.error || '未知错误'}`, 'err')
           }
