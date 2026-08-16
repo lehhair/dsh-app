@@ -81,25 +81,54 @@ public class DshNativePlugin extends Plugin {
                 }
             }, "DshNativeBridge");
 
-            // Push the page down below the (transparent, edge-to-edge)
-            // status bar so dsh's own content is never covered by it. The
-            // webview itself gets a top margin equal to the status bar
-            // height (the Capawesome edge-to-edge pattern: margin, not
-            // padding — padding would shrink the page viewport).
+            // Full-screen immersive: the page draws behind the status bar.
+            // Read the real status-bar height and inject a padding-top (in
+            // CSS pixels!) so dsh's own content clears the bar while the
+            // page keeps its full-bleed background. Only body gets the pad —
+            // padding the first child too stacked two insets.
+            final int statusBarPx = getStatusBarHeightPx();
+            final int statusBarCssPx = Math.round(statusBarPx / getActivity().getResources().getDisplayMetrics().density);
             androidx.core.view.OnApplyWindowInsetsListener insetsListener = (view, insets) -> {
-                androidx.core.graphics.Insets bars = insets.getInsets(
-                    androidx.core.view.WindowInsetsCompat.Type.systemBars()
-                        | androidx.core.view.WindowInsetsCompat.Type.displayCutout());
-                ViewGroup.MarginLayoutParams mlp =
-                    (ViewGroup.MarginLayoutParams) view.getLayoutParams();
-                mlp.topMargin = bars.top;
-                mlp.leftMargin = bars.left;
-                mlp.rightMargin = bars.right;
-                mlp.bottomMargin = bars.bottom;
-                view.setLayoutParams(mlp);
+                view.setPadding(0, 0, 0, 0);
                 return androidx.core.view.WindowInsetsCompat.CONSUMED;
             };
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(wv, insetsListener);
+            if (statusBarCssPx > 0) {
+                final String padJs = "if(!window.__dshAppPadApplied){" +
+                    "window.__dshAppPadApplied=true;" +
+                    "document.body.style.paddingTop='" + statusBarCssPx + "px';" +
+                    "}";
+                wv.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView view, String pageUrl) {
+                        super.onPageFinished(view, pageUrl);
+                        view.evaluateJavascript(padJs, null);
+                        if (injectScript != null && !injectScript.isEmpty()) {
+                            view.evaluateJavascript(injectScript, null);
+                        }
+                    }
+
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                        return false;
+                    }
+                });
+            } else {
+                wv.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView view, String pageUrl) {
+                        super.onPageFinished(view, pageUrl);
+                        if (injectScript != null && !injectScript.isEmpty()) {
+                            view.evaluateJavascript(injectScript, null);
+                        }
+                    }
+
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                        return false;
+                    }
+                });
+            }
 
             // Inject the gateway session cookie before any request fires.
             // SameSite=Strict is fine here: the WebView loads the gateway's
@@ -116,27 +145,6 @@ public class DshNativePlugin extends Plugin {
 
             // The gateway accepts Bearer <key> directly (verified: 200), a
             // belt-and-braces against any SameSite edge case on the cookie.
-            wv.setWebViewClient(new WebViewClient() {
-                @Override
-                public void onPageFinished(WebView view, String pageUrl) {
-                    super.onPageFinished(view, pageUrl);
-                    // Log where the page landed — still on the login path
-                    // means the cookie/header auth did not take.
-                    android.util.Log.i("DshNative", "page finished: " + pageUrl);
-                    // Inject the back-button script on every finished load
-                    // (the settings panel re-mounts between navigations).
-                    if (injectScript != null && !injectScript.isEmpty()) {
-                        view.evaluateJavascript(injectScript, null);
-                    }
-                }
-
-                @Override
-                public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                    // Returning false lets the WebView handle navigation
-                    // itself — returning true + loadUrl() here would recurse.
-                    return false;
-                }
-            });
 
             // Full-screen overlay above the Capacitor web content.
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
@@ -169,16 +177,20 @@ public class DshNativePlugin extends Plugin {
      */
     @PluginMethod
     public void getStatusBarHeight(final PluginCall call) {
-        int resourceId = getActivity().getResources().getIdentifier(
-                "status_bar_height", "dimen", "android");
-        int px = resourceId > 0
-                ? getActivity().getResources().getDimensionPixelSize(resourceId)
-                : 0;
+        int px = getStatusBarHeightPx();
         float density = getActivity().getResources().getDisplayMetrics().density;
         JSObject result = new JSObject();
         result.put("height", Math.round(px / density));
         result.put("px", px);
         call.resolve(result);
+    }
+
+    private int getStatusBarHeightPx() {
+        int resourceId = getActivity().getResources().getIdentifier(
+                "status_bar_height", "dimen", "android");
+        return resourceId > 0
+                ? getActivity().getResources().getDimensionPixelSize(resourceId)
+                : 0;
     }
 
     /**

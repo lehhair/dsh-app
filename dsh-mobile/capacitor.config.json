@@ -10,7 +10,7 @@
   },
   "plugins": {
     "SystemBars": {
-      "insetsHandling": "disable"
+      "insetsHandling": "css"
     }
   }
 }

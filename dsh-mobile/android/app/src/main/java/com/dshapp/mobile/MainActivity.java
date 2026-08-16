@@ -1,6 +1,5 @@
 package com.dshapp.mobile;
 
-import android.graphics.Color;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
@@ -14,10 +13,11 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(DshNativePlugin.class);
         super.onCreate(savedInstanceState);
-        // The white strip above the WebView is the CoordinatorLayout root
-        // background (Capacitor's default layout puts the WebView below the
-        // status bar and paints its own background above it). Paint that
-        // parent with the page color so the strip is invisible.
+        // Capacitor's default bridge layout (CoordinatorLayout) places the
+        // WebView below the status bar; the strip above it shows the
+        // CoordinatorLayout's background. Paint that parent with the page
+        // color so the strip is invisible — the bar and page read as one
+        // surface on every Android version, without fighting edge-to-edge.
         getWindow().getDecorView().post(() -> {
             View webView = findWebView(getWindow().getDecorView());
             if (webView == null) return;
@@ -27,8 +27,13 @@ public class MainActivity extends BridgeActivity {
             int pageColor = dark ? 0xFF151517 : 0xFFFFFFFF;
             ViewGroup parent = (ViewGroup) webView.getParent();
             if (parent != null) parent.setBackgroundColor(pageColor);
-            android.util.Log.i("DshNative", "parent bg " + (dark ? "#151517" : "#FFFFFF")
-                    + " parent=" + (parent != null ? parent.getClass().getSimpleName() : "null"));
+            // Icon contrast: light icons on dark, dark icons on light.
+            View decor = getWindow().getDecorView();
+            int flags = decor.getSystemUiVisibility();
+            if (dark) flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            else flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            decor.setSystemUiVisibility(flags);
+            android.util.Log.i("DshNative", "parent bg " + (dark ? "#151517" : "#FFFFFF"));
         });
     }
 
