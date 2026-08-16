@@ -151,8 +151,10 @@
       body.inactive .titlebar { opacity: 0.6; }
       /* Mobile: the status bar is fused with the page (edge-to-edge) — pad
          the content below the real inset (read natively; WebView < 140 lies
-         about env(safe-area-inset-*)). */
-      body.mobile .content { padding-top: calc(var(--safe-area-inset-top, 0px) + 24px); }
+         about env(safe-area-inset-*)). The page itself does not scroll: only
+         the node list does — the hero + 远程节点 header + search stay fixed. */
+      body.mobile .content { padding-top: calc(var(--safe-area-inset-top, 0px) + 24px); overflow: hidden; }
+      body.mobile .page { height: 100%; min-height: 0; }
       /* macOS: native traffic lights float at the top-left over this strip —
          pad the web controls clear of them and drop our own window buttons
          (the OS provides min/max/close). Windows/Linux keep the buttons. */
