@@ -179,7 +179,6 @@ fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> 
   let window = app.get_window(win_label).ok_or("窗口不可用")?;
   let label = format!("{win_label}-settings");
   let builder = WebviewBuilder::new(label, WebviewUrl::App("settings.html".into()))
-    .transparent(true)
     .on_page_load(move |webview, payload| {
       if payload.event() == tauri::webview::PageLoadEvent::Finished {
         let app = webview.app_handle();
@@ -189,6 +188,10 @@ fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> 
         }
       }
     });
+  // `transparent` does not exist on macOS (WKWebView has no transparency
+  // switch) — the settings overlay's page is opaque there anyway.
+  #[cfg(not(target_os = "macos"))]
+  let builder = builder.transparent(true);
   let (width, height) = content_size(app, win_label);
   let view = window
     .add_child(
