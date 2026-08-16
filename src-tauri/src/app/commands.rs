@@ -117,6 +117,13 @@ pub fn dsh_version(app: AppHandle) -> Option<String> {
   Paths::resolve(&app).local_dsh_version()
 }
 
+/// Runtime-resolution diagnostics for the launcher UI — shown next to the
+/// 未找到全局 dsh hint so a failing probe can be reported precisely.
+#[tauri::command]
+pub fn dsh_diagnose(app: AppHandle) -> String {
+  crate::app::paths::resolve_diagnostics(&app)
+}
+
 #[tauri::command]
 pub async fn dsh_check_update(app: AppHandle) -> Option<update::UpdateInfo> {
   update::check_update(&Paths::resolve(&app)).await

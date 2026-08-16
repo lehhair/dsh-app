@@ -125,6 +125,43 @@ impl Paths {
   }
 }
 
+/// Diagnostics for the runtime-resolution chain — surfaced in the launcher
+/// UI when the external flavor cannot find a global dsh, so a user can report
+/// exactly which probe failed instead of a bare 未找到全局 dsh.
+pub fn resolve_diagnostics(app: &AppHandle) -> String {
+  let res = app.path().resource_dir().unwrap_or_default();
+  let proj = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+  let user = app.path().app_data_dir().unwrap_or_else(|_| res.clone());
+  let mut lines = Vec::new();
+  lines.push(format!("resource_dir: {}", res.display()));
+  lines.push(format!("app_data_dir: {}", user.display()));
+  lines.push(format!("APPDATA env: {:?}", std::env::var_os("APPDATA")));
+  lines.push(format!("DSH_RUNTIME env: {:?}", std::env::var_os("DSH_RUNTIME")));
+  let ships_node = res.join("resources").join(if cfg!(windows) { "node.exe" } else { "node" }).exists()
+    || res.join("resources").join("node_modules/npm/bin/npm-cli.js").exists();
+  lines.push(format!("ships_node: {ships_node}"));
+  for (label, path) in [
+    ("resources/.dsh-runtime", res.join("resources").join(".dsh-runtime").join("node_modules/@deepseek-ai/dsh/lib/bin.js")),
+    ("proj/.dsh-runtime", proj.join(".dsh-runtime").join("node_modules/@deepseek-ai/dsh/lib/bin.js")),
+    ("app_data/dsh-runtime", user.join("dsh-runtime").join("node_modules/@deepseek-ai/dsh/lib/bin.js")),
+  ] {
+    lines.push(format!("{label}: {} -> {}", path.display(), path.exists()));
+  }
+  #[cfg(windows)]
+  if let Some(appdata) = std::env::var_os("APPDATA") {
+    let default = PathBuf::from(appdata).join("npm").join("node_modules");
+    lines.push(format!("default global root: {}", default.display()));
+    lines.push(format!("  @deepseek-ai/dsh/lib/bin.js exists: {}", default.join("@deepseek-ai/dsh/lib/bin.js").exists()));
+  }
+  if let Some(root) = global_npm_root() {
+    lines.push(format!("global_npm_root() -> {}", root.display()));
+    lines.push(format!("  bin.js exists: {}", root.join("@deepseek-ai/dsh/lib/bin.js").exists()));
+  } else {
+    lines.push("global_npm_root() -> None".to_string());
+  }
+  lines.join("\n")
+}
+
 /// Where the dsh runtime lives. Returns the dir that owns
 /// `node_modules/@deepseek-ai/dsh` plus whether the launcher manages it.
 /// `managed_only` = this install ships node+npm (bundled flavor) — only

@@ -255,6 +255,13 @@ async function renderDshVersion() {
     doUpdateBtn.hidden = true
   } else if (external && !v) {
     dshVersionEl.textContent = '未找到全局 dsh（npm i -g @deepseek-ai/dsh）'
+    // Surface the resolution chain so a failing probe is visible instead of
+    // a bare hint — put it in the boot log area for easy copy-paste.
+    const diag = await bridge.diagnose().catch(() => null)
+    if (diag) {
+      log.hidden = false
+      log.textContent = `[诊断] 未找到全局 dsh，解析链：\n${diag}`
+    }
   } else {
     dshVersionEl.textContent = `v${v}`
     checkUpdateBtn.textContent = '检查更新'

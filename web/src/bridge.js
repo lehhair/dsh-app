@@ -23,6 +23,7 @@ export const bridge = {
 
   // embedded dsh self-update / on-demand install
   dshVersion: () => invoke('dsh_version'),
+  diagnose: () => invoke('dsh_diagnose'),
   checkUpdate: () => invoke('dsh_check_update'),
   update: (target) => invoke('dsh_update', { target }),
   install: () => invoke('dsh_install'),

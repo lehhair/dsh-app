@@ -52,6 +52,7 @@ pub fn run() {
       commands::local_status,
       commands::local_logs,
       commands::dsh_version,
+      commands::dsh_diagnose,
       commands::dsh_check_update,
       commands::dsh_update,
       commands::dsh_install,
