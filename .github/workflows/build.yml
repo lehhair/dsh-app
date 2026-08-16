@@ -51,18 +51,19 @@ jobs:
           # standalone binary (small update payload for the launcher updater)
           cp src-tauri/target/release/dsh-app* release/external/ 2>/dev/null || true
 
-      - name: Install embedded dsh
-        shell: bash
-        run: npm install --prefix .dsh-runtime @deepseek-ai/dsh@$DSH_VERSION --no-audit --no-fund
-
       # The dsh runtime tree is large and has platform-specific native
-      # modules — cache it (keyed per platform + version) so every run after
-      # the first skips the slow install.
+      # modules — restore the cached install BEFORE npm install (the install
+      # step then no-ops against the restored tree). Cache is saved at job
+      # end, keyed per platform + version.
       - name: Cache embedded dsh runtime
         uses: actions/cache@v5
         with:
           path: .dsh-runtime
           key: dsh-runtime-${{ matrix.platform }}-${{ env.DSH_VERSION }}
+
+      - name: Install embedded dsh
+        shell: bash
+        run: npm install --prefix .dsh-runtime @deepseek-ai/dsh@$DSH_VERSION --no-audit --no-fund
 
       - name: Build bundled flavor
         shell: bash
