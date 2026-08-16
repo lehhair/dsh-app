@@ -68,7 +68,13 @@ jobs:
         shell: bash
         run: |
           node scripts/bundle-resources.mjs
-          npm run tauri -- build
+          if [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
+            # AppImage cannot package the ~400MB embedded payload — linuxdeploy
+            # fails on it; deb + rpm cover Linux bundled installs.
+            npm run tauri -- build --bundles deb,rpm
+          else
+            npm run tauri -- build
+          fi
           mkdir -p release/bundled
           cp -r src-tauri/target/release/bundle/* release/bundled/ 2>/dev/null || true
           cp src-tauri/target/release/dsh-app* release/bundled/ 2>/dev/null || true
