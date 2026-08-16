@@ -1,6 +1,7 @@
-# Embedded-run overlay: skip the user's remote-gateway plugin during
-# feasibility verification — it would squat the system gateway's 8443
-# (its config doc pins port 8443 and doc wins over any patch). The rest of
-# the profile (dsh-diff-viewer, dsh-html-artifact, ...) stays loaded.
-- id: remote-gateway
-  disabled: true
+# Embedded-run overlay.
+#
+# Empty by design: the embedded dsh loads the same plugins as a terminal
+# `dsh web`, including remote-gateway when the user has it. If that
+# gateway's fixed 8443 port is already taken by another gateway, the plugin
+# fails to bind and dsh reports the failure — that is the user's environment
+# and their choice, not something this shell should silently override.
