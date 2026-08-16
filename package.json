@@ -6,9 +6,12 @@
   "description": "dsh app shell (Tauri 2): embedded dsh runtime via bundled official Node, plus remote dsh node support",
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
+    "bundle:resources": "node scripts/bundle-resources.mjs",
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "build:bundled": "npm run bundle:resources && npm run tauri -- build",
+    "build:external": "node scripts/bundle-resources.mjs --external && npm run tauri -- build"
   },
   "dependencies": {
     "npm": "^12.0.2"

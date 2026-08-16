@@ -44,6 +44,9 @@ const reloadBtn = document.getElementById('reload')
 const titleStatus = document.getElementById('title-status')
 
 let current = null // { port, url }
+// External flavor: the dsh runtime is the user's own global install — the
+// shell cannot update it, so the in-app dsh updater is hidden.
+let external = false
 
 function setBadge(state, text) {
   badge.textContent = ''
@@ -229,8 +232,44 @@ bridge.onUpdateLog((line) => {
 
 async function renderDshVersion() {
   const v = await bridge.dshVersion()
-  dshVersionEl.textContent = v ? `v${v}` : '未安装'
+  if (!external && !v) {
+    dshVersionEl.textContent = '未安装'
+  } else if (external && !v) {
+    dshVersionEl.textContent = '未找到全局 dsh（npm i -g @deepseek-ai/dsh）'
+  } else {
+    dshVersionEl.textContent = `v${v}`
+  }
   dshVersionEl.className = 'version'
+}
+
+// ---- launcher self-update (GitHub Releases) ----
+
+const launcherUpdateRow = document.getElementById('launcher-update-row')
+const launcherUpdateLabel = document.getElementById('launcher-update-label')
+const launcherUpdateBtn = document.getElementById('launcher-update')
+
+async function checkLauncherUpdate() {
+  try {
+    const r = await bridge.checkLauncherUpdate()
+    if (r && r.updateAvailable) {
+      launcherUpdateLabel.textContent = `启动器 v${r.version} 可用`
+      launcherUpdateRow.hidden = false
+      launcherUpdateBtn.addEventListener('click', async () => {
+        launcherUpdateBtn.disabled = true
+        launcherUpdateBtn.textContent = '正在下载更新…'
+        try {
+          await bridge.launcherUpdate(r.url)
+          // The app swaps its own exe and relaunches; nothing to do here.
+        } catch (e) {
+          launcherUpdateBtn.disabled = false
+          launcherUpdateBtn.textContent = '更新失败'
+          launcherUpdateLabel.textContent = e || '更新失败'
+        }
+      })
+    }
+  } catch {
+    // No update channel configured / offline — stay quiet.
+  }
 }
 
 checkUpdateBtn.addEventListener('click', async () => {
@@ -427,6 +466,12 @@ bridge.appInfo().then((info) => {
         document.documentElement.style.setProperty('--safe-area-inset-top', `${height}px`)
       }
     }).catch(() => {})
+  } else if (!info.bundled) {
+    // External flavor: the dsh runtime is the user's own npm install — the
+    // in-app dsh updater would mutate something the user owns, so hide it.
+    external = true
+    document.getElementById('check-update')?.remove()
+    document.getElementById('do-update')?.remove()
   }
 }).catch(() => {})
 
@@ -435,6 +480,7 @@ renderRemoteList()
 renderRestore()
 renderAutoLocal()
 renderDshVersion()
+checkLauncherUpdate()
 // The window starts hidden to avoid a white flash; reveal it once painted.
 bridge.shellReady().catch(() => {})
 // Poll local status so the badge tracks boot/exit transitions live while the

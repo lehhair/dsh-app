@@ -23,6 +23,8 @@
     "allow-dsh-version",
     "allow-dsh-check-update",
     "allow-dsh-update",
+    "allow-check-launcher-update",
+    "allow-launcher-update",
     "allow-shell-connect",
     "allow-remote-connect",
     "allow-shell-back",

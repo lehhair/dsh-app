@@ -12,6 +12,8 @@ fn main() {
     "dsh_version",
     "dsh_check_update",
     "dsh_update",
+    "check_launcher_update",
+    "launcher_update",
     "shell_connect",
     "remote_connect",
     "shell_back",

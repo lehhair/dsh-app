@@ -52,6 +52,8 @@ pub fn run() {
       commands::dsh_version,
       commands::dsh_check_update,
       commands::dsh_update,
+      commands::check_launcher_update,
+      commands::launcher_update,
       commands::shell_connect,
       commands::remote_connect,
       commands::shell_back,

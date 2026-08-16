@@ -25,6 +25,10 @@ fn app_origin_gate(app: &AppHandle, webview: &Webview) -> Result<String, String>
 pub struct AppInfo {
   pub desktop: bool,
   pub version: String,
+  /// The dsh runtime is launcher-managed (bundled, or the dev project
+  /// fallback) — the shell can update it in place. False for the external
+  /// flavor (user-provided global dsh), which hides the in-app dsh updater.
+  pub bundled: bool,
 }
 
 #[tauri::command]
@@ -32,6 +36,7 @@ pub fn app_info(app: AppHandle) -> AppInfo {
   AppInfo {
     desktop: cfg!(desktop),
     version: app.package_info().version.to_string(),
+    bundled: Paths::resolve(&app).bundled,
   }
 }
 
@@ -98,6 +103,160 @@ pub async fn dsh_check_update(app: AppHandle) -> Option<update::UpdateInfo> {
 #[tauri::command]
 pub async fn dsh_update(app: AppHandle, target: String) -> Result<update::UpdateResult, String> {
   update::update_dsh(&app, &target).await
+}
+
+// ---- launcher self-update (GitHub Releases) ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherUpdateInfo {
+  pub update_available: bool,
+  pub version: Option<String>,
+  pub url: Option<String>,
+  pub size: Option<u64>,
+  pub notes: Option<String>,
+}
+
+/// Update channel: `DSH_UPDATE_OWNER` / `DSH_UPDATE_REPO` (empty disables).
+fn launcher_repo() -> (String, String) {
+  (
+    std::env::var("DSH_UPDATE_OWNER").unwrap_or_default(),
+    std::env::var("DSH_UPDATE_REPO").unwrap_or_default(),
+  )
+}
+
+/// Dotted-semver compare: `a > b`.
+fn version_gt(a: &str, b: &str) -> bool {
+  let pa: Vec<u64> = a.split('.').filter_map(|s| s.parse().ok()).collect();
+  let pb: Vec<u64> = b.split('.').filter_map(|s| s.parse().ok()).collect();
+  for i in 0..pa.len().max(pb.len()) {
+    let x = pa.get(i).copied().unwrap_or(0);
+    let y = pb.get(i).copied().unwrap_or(0);
+    if x != y {
+      return x > y;
+    }
+  }
+  false
+}
+
+#[tauri::command]
+pub async fn check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo, String> {
+  let none = || LauncherUpdateInfo {
+    update_available: false,
+    version: None,
+    url: None,
+    size: None,
+    notes: None,
+  };
+  let (owner, repo) = launcher_repo();
+  if owner.is_empty() || repo.is_empty() {
+    return Ok(none());
+  }
+  let client = reqwest::Client::builder()
+    .user_agent("dsh-app")
+    .timeout(std::time::Duration::from_secs(15))
+    .build()
+    .map_err(|e| e.to_string())?;
+  let resp = client
+    .get(format!("https://api.github.com/repos/{owner}/{repo}/releases/latest"))
+    .send()
+    .await
+    .map_err(|e| format!("无法连接 GitHub：{e}"))?;
+  if !resp.status().is_success() {
+    // 404 = no release yet; treat any failure as "no update".
+    return Ok(none());
+  }
+  let text = resp.text().await.map_err(|e| e.to_string())?;
+  let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+  let Some(tag) = json.get("tag_name").and_then(|t| t.as_str()) else {
+    return Ok(none());
+  };
+  let latest = tag.trim_start_matches('v');
+  let current = app.package_info().version.to_string();
+  if !version_gt(latest, &current) {
+    return Ok(none());
+  }
+  let assets = json.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
+  let asset = assets.iter().find(|a| {
+    a.get("name")
+      .and_then(|n| n.as_str())
+      .is_some_and(|n| n.ends_with(".exe"))
+  });
+  let url = asset
+    .and_then(|a| a.get("browser_download_url").and_then(|u| u.as_str()).map(str::to_string))
+    .ok_or("发布资产中没有找到 exe 下载")?;
+  let size = asset.and_then(|a| a.get("size").and_then(|s| s.as_u64()));
+  let notes = json.get("body").and_then(|b| b.as_str()).map(str::to_string);
+  Ok(LauncherUpdateInfo {
+    update_available: true,
+    version: Some(latest.to_string()),
+    url: Some(url),
+    size,
+    notes,
+  })
+}
+
+#[tauri::command]
+pub async fn launcher_update(app: AppHandle, url: String) -> Result<serde_json::Value, String> {
+  let exe = std::env::current_exe().map_err(|e| format!("无法定位程序路径：{e}"))?;
+  let dir = exe.parent().ok_or("程序路径异常")?.to_path_buf();
+  let new_path = dir.join("dsh-app.exe.new");
+
+  let client = reqwest::Client::builder()
+    .user_agent("dsh-app")
+    .timeout(std::time::Duration::from_secs(300))
+    .build()
+    .map_err(|e| e.to_string())?;
+  let resp = client
+    .get(&url)
+    .send()
+    .await
+    .map_err(|e| format!("下载失败：{e}"))?;
+  resp.error_for_status_ref().map_err(|e| format!("下载失败：{e}"))?;
+  let bytes = resp.bytes().await.map_err(|e| format!("下载失败：{e}"))?;
+  if bytes.is_empty() {
+    return Err("下载内容为空".into());
+  }
+  std::fs::write(&new_path, &bytes).map_err(|e| format!("写入更新文件失败：{e}"))?;
+
+  // A running exe cannot be replaced on Windows, so hand the swap to a
+  // detached .cmd: wait for this process to exit (it will, right after this
+  // command returns), swap the exe, and relaunch.
+  let exe_name = exe.file_name().and_then(|n| n.to_str()).unwrap_or("dsh-app.exe");
+  let script = format!(
+    "@echo off\r\ntimeout /t 3 /nobreak >nul\r\n:wait\r\ntasklist /FI \"IMAGENAME eq {name}\" 2>nul | find /I \"{name}\" >nul\r\nif not errorlevel 1 (\r\n  timeout /t 1 /nobreak >nul\r\n  goto wait\r\n)\r\nmove /Y \"{new}\" \"{exe}\"\r\nstart \"\" \"{exe}\"\r\n",
+    name = exe_name,
+    new = new_path.display(),
+    exe = exe.display(),
+  );
+  let script_path = dir.join("dsh-app-update.cmd");
+  std::fs::write(&script_path, script).map_err(|e| format!("写入更新脚本失败：{e}"))?;
+  #[cfg(windows)]
+  {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = std::process::Command::new("cmd")
+      .arg("/C")
+      .arg(&script_path)
+      .creation_flags(CREATE_NO_WINDOW)
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::null())
+      .stderr(std::process::Stdio::null())
+      .spawn();
+  }
+  #[cfg(not(windows))]
+  {
+    let _ = std::process::Command::new("sh")
+      .arg("-c")
+      .arg(format!("sleep 3; while kill -0 {} 2>/dev/null; do sleep 1; done; mv '{}' '{}'; exec '{}'", std::process::id(), new_path.display(), exe.display(), exe.display()))
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::null())
+      .stderr(std::process::Stdio::null())
+      .spawn();
+  }
+  // Exit now; the detached script swaps the exe and relaunches.
+  app.exit(0);
+  Ok(serde_json::json!({ "ok": true }))
 }
 
 // ---- connect / navigate ----

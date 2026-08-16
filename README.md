@@ -2,6 +2,32 @@
 
 DeepSeek Harness 桌面壳：深度内嵌 dsh 运行时（PC），渲染内容与 dsh web 完全一致。
 
+> 当前实现为 **Tauri 2**（桌面 + Android），下方"架构"一节为历史 Electron 记录。
+> 构建与发布见「构建与发布」。
+
+## 构建与发布（Tauri）
+
+两种发布形态由 `resources/` 里的内容决定，先 `npm run build:web`（前端已内嵌，
+改前端必须重新 `cargo build` 才会进 exe）：
+
+```powershell
+# 自包含版：把官方 node.exe + .dsh-runtime + npm CLI 复制进 resources/ 再打包
+npm run build:bundled
+
+# 纯依赖 PC 版：只留 overlay，程序用系统 PATH 上的 node + 全局安装的 dsh
+npm run build:external
+```
+
+- 内置版运行时定位：`resources/.dsh-runtime` → `DSH_RUNTIME` 环境变量 → 全局 npm
+  （`npm root -g` 下的 `@deepseek-ai/dsh`）→ `node` on PATH。
+- 外部版（`app_info.bundled === false`）：隐藏应用内 dsh 更新按钮（dsh 由用户自己的
+  npm 管理，全局安装：`npm i -g @deepseek-ai/dsh`）；node 用 PATH 上的。
+- **启动器自更新（GitHub Releases）**：设置环境变量 `DSH_UPDATE_OWNER` /
+  `DSH_UPDATE_REPO` 后，启动页检测到更高版本的 release（tag `vX.Y.Z`，资产含
+  `.exe`）时显示「更新启动器」按钮；下载、替换 exe、自动重启，只更新启动器本体，
+  不重下 dsh 运行时。未设置环境变量时该功能静默关闭。
+- 内置版的 dsh 运行时更新走应用内「检查更新」（npm 更新 resources/.dsh-runtime）。
+
 ## 架构
 
 ```
