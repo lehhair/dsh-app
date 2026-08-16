@@ -68,7 +68,9 @@ public class DshNativePlugin extends Plugin {
             dispatcher.addCallback(componentActivity, backCallback);
 
             WebView wv = new WebView(activity);
-            wv.setBackgroundColor(0xFF151517); // dsh dark ground while booting
+            // Background matches dsh dark ground; the strip above the WebView
+            // (status bar area) shows the same color so it fuses.
+            wv.setBackgroundColor(0xFF151517);
             WebSettings settings = wv.getSettings();
             settings.setJavaScriptEnabled(true);
             settings.setDomStorageEnabled(true);
@@ -81,54 +83,29 @@ public class DshNativePlugin extends Plugin {
                 }
             }, "DshNativeBridge");
 
-            // Full-screen immersive: the page draws behind the status bar.
-            // Read the real status-bar height and inject a padding-top (in
-            // CSS pixels!) so dsh's own content clears the bar while the
-            // page keeps its full-bleed background. Only body gets the pad —
-            // padding the first child too stacked two insets.
+            // Place the WebView below the status bar: the view gets a top
+            // margin equal to the status bar height (physical px — native
+            // layout, not page CSS). The page's own layout is untouched, so
+            // no scrollbar appears; the strip above the WebView shows the
+            // window background (page color), fusing with the page.
             final int statusBarPx = getStatusBarHeightPx();
-            final int statusBarCssPx = Math.round(statusBarPx / getActivity().getResources().getDisplayMetrics().density);
-            androidx.core.view.OnApplyWindowInsetsListener insetsListener = (view, insets) -> {
-                view.setPadding(0, 0, 0, 0);
-                return androidx.core.view.WindowInsetsCompat.CONSUMED;
-            };
+            androidx.core.view.OnApplyWindowInsetsListener insetsListener = (view, insets) ->
+                    androidx.core.view.WindowInsetsCompat.CONSUMED;
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(wv, insetsListener);
-            if (statusBarCssPx > 0) {
-                final String padJs = "if(!window.__dshAppPadApplied){" +
-                    "window.__dshAppPadApplied=true;" +
-                    "document.body.style.paddingTop='" + statusBarCssPx + "px';" +
-                    "}";
-                wv.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public void onPageFinished(WebView view, String pageUrl) {
-                        super.onPageFinished(view, pageUrl);
-                        view.evaluateJavascript(padJs, null);
-                        if (injectScript != null && !injectScript.isEmpty()) {
-                            view.evaluateJavascript(injectScript, null);
-                        }
+            wv.setWebViewClient(new WebViewClient() {
+                @Override
+                public void onPageFinished(WebView view, String pageUrl) {
+                    super.onPageFinished(view, pageUrl);
+                    if (injectScript != null && !injectScript.isEmpty()) {
+                        view.evaluateJavascript(injectScript, null);
                     }
+                }
 
-                    @Override
-                    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                        return false;
-                    }
-                });
-            } else {
-                wv.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public void onPageFinished(WebView view, String pageUrl) {
-                        super.onPageFinished(view, pageUrl);
-                        if (injectScript != null && !injectScript.isEmpty()) {
-                            view.evaluateJavascript(injectScript, null);
-                        }
-                    }
-
-                    @Override
-                    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                        return false;
-                    }
-                });
-            }
+                @Override
+                public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                    return false;
+                }
+            });
 
             // Inject the gateway session cookie before any request fires.
             // SameSite=Strict is fine here: the WebView loads the gateway's
@@ -146,10 +123,12 @@ public class DshNativePlugin extends Plugin {
             // The gateway accepts Bearer <key> directly (verified: 200), a
             // belt-and-braces against any SameSite edge case on the cookie.
 
-            // Full-screen overlay above the Capacitor web content.
+            // Full-screen overlay above the Capacitor web content, pushed
+            // below the status bar via top margin (physical px).
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT);
+            params.topMargin = statusBarPx;
             ((ViewGroup) activity.getWindow().getDecorView()).addView(wv, params);
             webView = wv;
             if (authKey != null && !authKey.isEmpty()) {
