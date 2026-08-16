@@ -57,7 +57,13 @@ async fn run_npm(paths: &Paths, args: &[&str]) -> (i32, String) {
 /// Latest published version on the registry, or None on failure.
 pub async fn check_update(paths: &Paths) -> Option<UpdateInfo> {
   let (code, out) = run_npm(paths, &["view", "@deepseek-ai/dsh", "version"]).await;
-  let latest = out.trim().split_whitespace().next_back().unwrap_or("").to_string();
+  // npm may print warnings (e.g. unsupported Node version) AFTER the version
+  // token — take the FIRST token that starts with a digit, not the last.
+  let latest = out
+    .split_whitespace()
+    .find(|token| token.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+    .unwrap_or("")
+    .to_string();
   if code != 0 || !latest.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
     return None;
   }
