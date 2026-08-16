@@ -60,6 +60,8 @@ export const bridge = {
     getAutoLocal: () => invoke('settings_get_auto_local'),
     setAutoLocal: (enabled) => invoke('settings_set_auto_local', { enabled }),
   },
+  // emitted when the (cached) settings overlay becomes visible — re-read state
+  onSettingsRefresh: (callback) => on('settings:refresh', callback),
 
   // live theme sync from the connected dsh page
   onThemeSync: (callback) => on('theme:sync', callback),

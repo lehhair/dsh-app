@@ -200,3 +200,15 @@ toLauncherBtn.addEventListener('click', async () => {
 renderCurrent()
 renderLocal()
 renderInstances()
+
+// The overlay is cached (pre-warmed hidden) — it read its state once at
+// window start. Refresh current connection + local instance whenever the
+// dialog is shown again, and poll the local status so the row follows
+// start/stop transitions live (chase animation included).
+bridge.onSettingsRefresh(() => {
+  renderCurrent()
+  renderLocal()
+  renderInstances()
+})
+setInterval(renderLocal, 1000)
+setInterval(renderCurrent, 2000)

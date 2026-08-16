@@ -565,6 +565,10 @@ pub fn open_settings(app: &AppHandle, win_label: &str) -> Result<(), String> {
       let _ = view.show();
     }
   }
+  drop(states);
+  // The cached dialog read its state once at pre-warm — ask it to re-read
+  // current connection + local instance whenever it becomes visible.
+  let _ = app.emit_to(format!("{win_label}-settings"), "settings:refresh", ());
   Ok(())
 }
 
