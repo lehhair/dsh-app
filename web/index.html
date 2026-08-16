@@ -570,7 +570,7 @@
             <span class="search-icon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg></span>
             <input id="remote-search" class="search-input" placeholder="搜索实例（名称 / 地址）" spellcheck="false" />
           </span>
-          <div id="remote-list" class="remote-list"></div>
+          <!-- Add-instance form: fixed above the list so it is visible when 添加实例 opens it -->
           <div id="remote-form" class="remote-form" hidden>
             <div class="field-row">
               <input id="rf-name" class="field" placeholder="名称，如 书房网关" spellcheck="false" />
@@ -583,6 +583,7 @@
             </div>
             <p class="error" id="rf-error"></p>
           </div>
+          <div id="remote-list" class="remote-list"></div>
         </section>
       </div>
     </main>

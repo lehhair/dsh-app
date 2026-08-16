@@ -364,12 +364,14 @@ async function renderRemoteList() {
     const actions = document.createElement('div')
     actions.className = 'actions'
     actions.appendChild(makeBtn('连接', 'primary sm', () => connectRemoteById(inst.id)))
-    actions.appendChild(makeBtn('编辑', 'ghost sm', () => openRemoteForm(inst)))
+    const edit = buildInlineEditForm(inst.id, () => renderRemoteList())
+    actions.appendChild(makeBtn('编辑', 'ghost sm', () => openRowEdit(edit, inst)))
     actions.appendChild(makeBtn('删除', 'ghost sm', async () => {
       await bridge.remote.remove(inst.id)
       renderRemoteList()
     }))
     row.appendChild(actions)
+    row.appendChild(edit.form)
 
     remoteList.appendChild(row)
     void refreshHealth(inst.id, healthDot)
@@ -384,17 +386,83 @@ async function renderRemoteList() {
 
 remoteSearch.addEventListener('input', () => renderRemoteList())
 
-function openRemoteForm(inst) {
-  editingId = inst?.id ?? null
-  rfName.value = inst?.name ?? ''
-  rfUrl.value = inst?.url ?? ''
+// ---- inline per-row edit form: editing happens where the node is, not in a
+// form at the bottom of the page. The global #remote-form is for adding. ----
+
+let openInlineForm = null // the currently expanded row edit form (if any)
+
+function buildInlineEditForm(id, onSaved) {
+  const form = document.createElement('div')
+  form.className = 'remote-form'
+  form.hidden = true
+  const name = document.createElement('input')
+  name.className = 'field'
+  name.placeholder = '名称，如 书房网关'
+  name.spellcheck = false
+  const url = document.createElement('input')
+  url.className = 'field'
+  url.placeholder = 'http://192.168.1.233:8443'
+  url.spellcheck = false
+  const key = document.createElement('input')
+  key.className = 'field'
+  key.type = 'password'
+  key.placeholder = '访问密钥（留空保留）'
+  const fieldRow = document.createElement('div')
+  fieldRow.className = 'field-row'
+  fieldRow.append(name, url, key)
+  const error = document.createElement('p')
+  error.className = 'error'
+  error.style.minHeight = '0'
+  error.style.margin = '8px 0 0'
+  const actions = document.createElement('div')
+  actions.className = 'actions'
+  actions.style.marginTop = '10px'
+  actions.append(
+    makeBtn('保存', 'primary sm', async () => {
+      error.textContent = ''
+      const r = await bridge.remote.save({ id, name: name.value, url: url.value, key: key.value })
+      if (r.ok) {
+        form.hidden = true
+        if (openInlineForm === form) openInlineForm = null
+        onSaved()
+      } else {
+        error.textContent = r.error || '保存失败'
+      }
+    }),
+    makeBtn('取消', 'ghost sm', () => {
+      form.hidden = true
+      if (openInlineForm === form) openInlineForm = null
+    }),
+  )
+  form.append(fieldRow, actions, error)
+  return { form, name, url, key }
+}
+
+function openRowEdit(edit, inst) {
+  remoteForm.hidden = true // close the global add form
+  if (openInlineForm && openInlineForm !== edit.form) openInlineForm.hidden = true
+  edit.name.value = inst.name
+  edit.url.value = inst.url
+  edit.key.value = ''
+  edit.form.hidden = false
+  openInlineForm = edit.form
+  edit.name.focus()
+}
+
+// add-instance: the global form sits fixed above the list
+remoteAddBtn.addEventListener('click', () => {
+  if (openInlineForm) {
+    openInlineForm.hidden = true
+    openInlineForm = null
+  }
+  editingId = null
+  rfName.value = ''
+  rfUrl.value = ''
   rfKey.value = ''
   rfError.textContent = ''
   remoteForm.hidden = false
   rfName.focus()
-}
-
-remoteAddBtn.addEventListener('click', () => openRemoteForm(null))
+})
 rfCancel.addEventListener('click', () => { remoteForm.hidden = true })
 
 rfSave.addEventListener('click', async () => {
