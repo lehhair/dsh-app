@@ -14,7 +14,7 @@
 // back to the project root in dev, so this script only matters for packages.
 
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
@@ -36,8 +36,9 @@ function copy(src, dest) {
     console.warn(`[bundle:resources] missing source, skipped: ${src}`)
     return
   }
-  mkdirSync(join(out, dest), { recursive: true })
-  cpSync(src, join(out, dest), { recursive: true })
+  const destPath = join(out, dest)
+  mkdirSync(dirname(destPath), { recursive: true })
+  cpSync(src, destPath, { recursive: true })
   console.log(`[bundle:resources] ${src} -> resources/${dest}`)
 }
 
