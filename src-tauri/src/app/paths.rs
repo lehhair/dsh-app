@@ -87,7 +87,15 @@ impl Paths {
       }
     };
 
-    let (runtime_root, bundled) = resolve_runtime(&res, &proj, &user);
+    let ships_node = res.join("resources").join(node_name).exists()
+      || res.join("resources").join("node_modules/npm/bin/npm-cli.js").exists();
+    let (runtime_root, managed_runtime) = resolve_runtime(&res, &proj, &user, ships_node);
+
+    // The shell "manages" dsh when a launcher-owned runtime exists (bundled /
+    // user-data / dev project), OR this install ships node + npm (bundled
+    // flavor) and can install/manage one on demand — even before any runtime
+    // is installed, so the UI offers 安装 dsh instead of the external message.
+    let bundled = managed_runtime || ships_node;
 
     Paths {
       dsh_runtime: runtime_root.clone(),
@@ -119,7 +127,9 @@ impl Paths {
 
 /// Where the dsh runtime lives. Returns the dir that owns
 /// `node_modules/@deepseek-ai/dsh` plus whether the launcher manages it.
-fn resolve_runtime(res: &Path, proj: &Path, user: &Path) -> (PathBuf, bool) {
+/// `managed_only` = this install ships node+npm (bundled flavor) — only
+/// launcher-owned runtimes are used; the user's own dsh is never picked up.
+fn resolve_runtime(res: &Path, proj: &Path, user: &Path, managed_only: bool) -> (PathBuf, bool) {
   let bundled_res = res.join("resources").join(".dsh-runtime");
   if bundled_res.join("node_modules/@deepseek-ai/dsh/lib/bin.js").exists() {
     return (bundled_res, true);
@@ -129,11 +139,17 @@ fn resolve_runtime(res: &Path, proj: &Path, user: &Path) -> (PathBuf, bool) {
     return (proj_runtime, true);
   }
   // The shell's on-demand install target (writable user-data dir). Checked
-  // before DSH_RUNTIME/global so a bundled install keeps using the runtime
+  // before the user's own dsh so a bundled install keeps using the runtime
   // the app itself installed.
   let user_runtime = user.join("dsh-runtime");
   if user_runtime.join("node_modules/@deepseek-ai/dsh/lib/bin.js").exists() {
     return (user_runtime, true);
+  }
+  if managed_only {
+    // Nothing found — the bundled install installs on demand; point at the
+    // user-data target so a missing runtime reads as 未安装 (not the user's
+    // global dsh).
+    return (user_runtime, false);
   }
   if let Ok(env_dir) = std::env::var("DSH_RUNTIME") {
     return (PathBuf::from(env_dir), false);
@@ -150,7 +166,9 @@ fn resolve_runtime(res: &Path, proj: &Path, user: &Path) -> (PathBuf, bool) {
 /// The user's global npm node_modules dir (`npm root -g`), used by the
 /// external flavor to find a globally installed `@deepseek-ai/dsh`.
 fn global_npm_root() -> Option<PathBuf> {
-  let output = std::process::Command::new("npm")
+  // npm is npm.cmd on Windows (there is no npm.exe) — spawn the shim.
+  let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
+  let output = std::process::Command::new(npm)
     .args(["root", "-g"])
     .stdin(Stdio::null())
     .stdout(Stdio::piped())

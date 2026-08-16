@@ -108,6 +108,19 @@ async function refresh() {
 
 startBtn.addEventListener('click', async () => {
   setState('starting')
+  // Bundled installs ship node + npm only — install the dsh runtime first
+  // when it is missing, then boot.
+  if (!external && !runtimeInstalled) {
+    log.hidden = false
+    log.textContent = '正在安装 dsh 运行时…'
+    const r = await bridge.install().catch((e) => ({ ok: false, error: e || '安装失败' }))
+    renderDshVersion()
+    if (!r.ok) {
+      setState('error')
+      log.textContent = `安装 dsh 失败：${r.error || '未知错误'}\n${(await bridge.logs().catch(() => [])).join('\n').slice(-4000)}`
+      return
+    }
+  }
   let result
   try {
     result = await bridge.startLocal()

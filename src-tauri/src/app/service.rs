@@ -65,6 +65,11 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
   }
 
   let paths = Paths::resolve(app);
+  // Bundled installs ship node + npm but not the dsh runtime — give a clear
+  // instruction instead of spawning node against a missing bin.js.
+  if !paths.dsh_bin.exists() {
+    return Err("dsh 运行时未安装 —— 请先点击「安装 dsh」".into());
+  }
   let port = pick_free_port().map_err(|e| format!("无法分配端口：{e}"))?;
   let url = format!("http://127.0.0.1:{port}/");
 
