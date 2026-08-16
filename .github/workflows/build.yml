@@ -6,10 +6,6 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-env:
-  # Embedded dsh version provisioned for the bundled flavor (npm i --prefix .dsh-runtime).
-  DSH_VERSION: '0.1.0-rc.6'
-
 jobs:
   # ---------------------------------------------------------------
   # Desktop: BOTH flavors per platform — external (uses the PC's own
@@ -58,18 +54,25 @@ jobs:
           cp src-tauri/target/release/dsh-app* release/external/ 2>/dev/null || true
 
       # Bundled flavor is Windows-only: macOS/Linux users just need the
-      # launcher (external flavor — their own node + global dsh).
+      # launcher (external flavor — their own node + global dsh). The shell
+      # has no dsh-version compatibility constraints, so the embedded dsh is
+      # always the latest published on npm.
+      - name: Resolve latest dsh version
+        id: dsh-version
+        shell: bash
+        run: echo "version=$(npm view @deepseek-ai/dsh version)" >> "$GITHUB_OUTPUT"
+
       - name: Cache embedded dsh runtime
         if: matrix.platform == 'windows-latest'
         uses: actions/cache@v5
         with:
           path: .dsh-runtime
-          key: dsh-runtime-windows-latest-${{ env.DSH_VERSION }}
+          key: dsh-runtime-windows-latest-${{ steps.dsh-version.outputs.version }}
 
       - name: Install embedded dsh
         if: matrix.platform == 'windows-latest'
         shell: bash
-        run: npm install --prefix .dsh-runtime @deepseek-ai/dsh@$DSH_VERSION --no-audit --no-fund
+        run: npm install --prefix .dsh-runtime @deepseek-ai/dsh@${{ steps.dsh-version.outputs.version }} --no-audit --no-fund
 
       - name: Build bundled flavor
         if: matrix.platform == 'windows-latest'
