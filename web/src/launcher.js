@@ -531,20 +531,32 @@ bridge.appInfo().then((info) => {
     document.getElementById('local-section')?.remove()
     document.getElementById('titlebar')?.remove()
     // WebView < 140 reports wrong env(safe-area-inset-*) under edge-to-edge;
-    // read the real inset natively.
+    // read the real inset natively. The page stays hidden (html.pad-pending)
+    // until the inset is applied — a cached value from a previous launch was
+    // already set synchronously in the inline head script, so this is only a
+    // jump-free refresh.
     bridge.statusBarHeight().then((height) => {
       if (height && height > 0) {
         document.documentElement.style.setProperty('--safe-area-inset-top', `${height}px`)
+        try { localStorage.setItem('dsh-safe-area-top', String(height)) } catch (_e) {}
       }
-    }).catch(() => {})
-  } else if (!info.bundled) {
-    // External flavor: the dsh runtime is the user's own npm install — the
-    // in-app dsh updater would mutate something the user owns, so hide it.
-    external = true
-    document.getElementById('check-update')?.remove()
-    document.getElementById('do-update')?.remove()
+    }).catch(() => {}).finally(() => {
+      document.documentElement.classList.remove('pad-pending')
+    })
+  } else {
+    // Desktop has no safe-area inset — reveal immediately.
+    document.documentElement.classList.remove('pad-pending')
+    if (!info.bundled) {
+      // External flavor: the dsh runtime is the user's own npm install — the
+      // in-app dsh updater would mutate something the user owns, so hide it.
+      external = true
+      document.getElementById('check-update')?.remove()
+      document.getElementById('do-update')?.remove()
+    }
   }
-}).catch(() => {})
+}).catch(() => {
+  document.documentElement.classList.remove('pad-pending')
+})
 
 refresh()
 renderRemoteList()

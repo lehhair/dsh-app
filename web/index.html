@@ -4,6 +4,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DeepSeek Harness</title>
+    <script>
+      (function () {
+        // Start hidden until the real safe-area inset is applied: the native
+        // statusBarHeight invoke is async, so without this the first paint
+        // uses the fallback padding and the content jumps when the inset
+        // lands. A cached value (from a previous launch) is applied
+        // synchronously here; the window background matches the page ground,
+        // so the brief hidden state is invisible.
+        document.documentElement.classList.add('pad-pending')
+        try {
+          var cached = localStorage.getItem('dsh-safe-area-top')
+          if (cached) document.documentElement.style.setProperty('--safe-area-inset-top', cached + 'px')
+        } catch (_e) {}
+      })()
+    </script>
     <style>
       /* Shell palette = dsh alias tokens (light/dark defaults). While a dsh
          page is connected, view-preload samples the page's ACTUAL tokens and
@@ -84,6 +99,8 @@
       }
 
       html, body { height: 100%; margin: 0; }
+      /* Revealed by launcher.js once the safe-area inset is applied */
+      html.pad-pending body { visibility: hidden; }
       body {
         background: var(--shell-bg);
         color: var(--shell-fg);
