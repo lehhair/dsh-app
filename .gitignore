@@ -1,6 +1,7 @@
 node_modules/
 .dsh-runtime/
 resources/
+!resources/embedded-overlay.yml
 dist/
 out/
 *.log
