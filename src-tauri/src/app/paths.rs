@@ -140,6 +140,10 @@ const EMBEDDED_OVERLAY: &str = include_str!(concat!(
 /// when the file still matches the previously materialized default (i.e. the
 /// user has not touched it). A `.overlay-default` snapshot records what this
 /// exe last wrote, so a customized file survives launcher updates untouched.
+///
+/// A file with no YAML content at all (comments only) is INVALID — dsh's
+/// loader requires a top-level array and crashes on null — so it is treated
+/// like a missing file and rewritten from the default.
 fn materialize_overlay(user: &Path) -> PathBuf {
   let dir = user.join("overlay");
   let path = dir.join("embedded-overlay.yml");
@@ -149,8 +153,13 @@ fn materialize_overlay(user: &Path) -> PathBuf {
   let existing = std::fs::read_to_string(&path).unwrap_or_default();
   let last_default = std::fs::read_to_string(&snapshot).unwrap_or_default();
 
-  if existing.is_empty() {
-    // Never materialized (or user deleted it) — write the current default.
+  // Comments-only = no patch entries = null in YAML = loader crash.
+  let has_content = existing
+    .lines()
+    .any(|line| !line.trim_start().starts_with('#') && !line.trim().is_empty());
+
+  if !has_content {
+    // Missing, deleted, or an invalid comment-only stub — write the default.
     let _ = std::fs::write(&path, EMBEDDED_OVERLAY);
     let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
   } else if existing == EMBEDDED_OVERLAY {

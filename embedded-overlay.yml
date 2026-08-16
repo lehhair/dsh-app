@@ -5,3 +5,7 @@
 # gateway's fixed 8443 port is already taken by another gateway, the plugin
 # fails to bind and dsh reports the failure — that is the user's environment
 # and their choice, not something this shell should silently override.
+#
+# dsh's loader requires a top-level YAML array here; a comment-only file
+# parses as null and crashes the loader, so keep the explicit `[]`.
+[]
