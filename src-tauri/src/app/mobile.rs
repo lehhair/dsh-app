@@ -34,4 +34,15 @@ impl<R: Runtime> DshNative<R> {
       .map_err(|e| e.to_string())?;
     Ok(result.height)
   }
+
+  /// Status-bar icon appearance driven by the page theme: `dark` = the page
+  /// is dark, so icons must be light (and vice versa). The dsh page can be
+  /// dark while the system is light, so the uiMode poll in MainActivity is
+  /// not enough.
+  pub fn set_status_bar_appearance(&self, dark: bool) -> Result<(), String> {
+    self
+      .0
+      .run_mobile_plugin::<()>("setStatusBarAppearance", serde_json::json!({ "dark": dark }))
+      .map_err(|e| e.to_string())
+  }
 }

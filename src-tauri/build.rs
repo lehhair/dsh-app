@@ -5,6 +5,7 @@ fn main() {
   let manifest = tauri_build::AppManifest::new().commands(&[
     "app_info",
     "status_bar_height",
+    "status_bar_appearance",
     "local_start",
     "local_stop",
     "local_status",

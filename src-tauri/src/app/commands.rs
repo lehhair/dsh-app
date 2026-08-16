@@ -58,6 +58,25 @@ pub fn status_bar_height(app: AppHandle) -> f64 {
   }
 }
 
+/// Status-bar icon appearance following the page theme (Android; no-op
+/// elsewhere). `dark` = the page is dark → light icons.
+#[tauri::command]
+pub fn status_bar_appearance(app: AppHandle, dark: bool) -> Result<serde_json::Value, String> {
+  #[cfg(target_os = "android")]
+  {
+    let plugin = app.state::<crate::app::mobile::DshNative<tauri::Wry>>();
+    plugin
+      .set_status_bar_appearance(dark)
+      .map_err(|e| e.to_string())?;
+  }
+  #[cfg(not(target_os = "android"))]
+  {
+    let _ = &app;
+    let _ = dark;
+  }
+  Ok(serde_json::json!({ "ok": true }))
+}
+
 // ---- embedded local instance ----
 
 #[tauri::command]

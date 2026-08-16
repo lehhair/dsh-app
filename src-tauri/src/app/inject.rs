@@ -57,6 +57,7 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
     try {
       window.__TAURI_INTERNALS__.invoke('theme_changed', { tokens: sampleTokens() });
     } catch (_e) {}
+    syncStatusBarIcons();
   }
 
   // ---- back button (dsh settings panel header) ----
@@ -123,7 +124,9 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
   // Mobile only: WebView < 140 reports wrong env(safe-area-inset-*) under
   // edge-to-edge, so pad the dsh page below the real status-bar inset
   // (read natively). Same mechanics as the Capacitor fix: body padding inside
-  // a border-box keeps the fixed-height SPA inside the viewport.
+  // a border-box keeps the fixed-height SPA inside the viewport. The dialog
+  // rule offsets dsh's modal settings panel (a fixed/relative overlay that
+  // body padding does not reach) below the bar.
   function applySafeArea() {
     if (!/Android/i.test(navigator.userAgent)) return;
     try {
@@ -132,11 +135,32 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
           const style = document.createElement('style');
           style.id = 'dsh-app-safe-area';
           style.textContent =
-            'body{padding-top:' + height + 'px;box-sizing:border-box}#root{height:100%}';
+            'body{padding-top:' + height + 'px;box-sizing:border-box}' +
+            '#root{height:100%}' +
+            '[role="dialog"][aria-modal="true"]{margin-top:' + height + 'px!important;max-height:calc(100% - ' + height + 'px)!important}';
           document.head.appendChild(style);
         }
       }).catch(() => {});
     } catch (_e) {}
+  }
+
+  // Status-bar icon appearance follows the page's ACTUAL theme (dsh can be
+  // dark while the system is light): sample the bg-base token luminance and
+  // tell the native side which icon color to use.
+  let lastStatusBarDark = null;
+  function syncStatusBarIcons() {
+    if (!/Android/i.test(navigator.userAgent)) return;
+    const bg = getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim();
+    const m = bg.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (!m) return;
+    const luminance = 0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3];
+    const dark = luminance < 128;
+    if (dark !== lastStatusBarDark) {
+      lastStatusBarDark = dark;
+      try {
+        window.__TAURI_INTERNALS__.invoke('status_bar_appearance', { dark });
+      } catch (_e) {}
+    }
   }
 
   function init() {

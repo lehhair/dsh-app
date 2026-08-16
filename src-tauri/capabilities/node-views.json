@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "node-views",
-  "description": "Minimal permissions for dsh node webviews (remote pages): the injected back button (shell_back) and theme sampler (theme_changed). Everything else is blocked by the launcher-origin gate in Rust.",
-  "webviews": ["main-*", "win-*-*"],
+  "description": "Minimal permissions for dsh node webviews (remote pages): the injected back button (shell_back) and theme sampler (theme_changed). 'main' is the mobile host webview (the dsh page loads in it); 'main-*'/'win-*-*' are the desktop child node views. Everything else is blocked by the launcher-origin gate in Rust.",
+  "webviews": ["main", "main-*", "win-*-*"],
   "local": false,
   "remote": {
     "urls": ["http://*:*", "https://*:*"]
@@ -10,6 +10,7 @@
   "permissions": [
     "allow-shell-back",
     "allow-theme-changed",
-    "allow-status-bar-height"
+    "allow-status-bar-height",
+    "allow-status-bar-appearance"
   ]
 }

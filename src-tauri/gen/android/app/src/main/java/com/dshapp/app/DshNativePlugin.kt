@@ -3,6 +3,7 @@ package com.dshapp.app
 import android.app.Activity
 import android.os.Build
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.webkit.CookieManager
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -15,6 +16,11 @@ import app.tauri.plugin.Plugin
 class SetCookieArgs {
   var origin: String? = null
   var cookie: String? = null
+}
+
+@InvokeArg
+class SetStatusBarAppearanceArgs {
+  var dark: Boolean = true
 }
 
 /**
@@ -55,5 +61,21 @@ class DshNativePlugin(private val activity: Activity) : Plugin(activity) {
     val ret = JSObject()
     ret.put("height", if (density > 0f) px / density else px.toDouble())
     invoke.resolve(ret)
+  }
+
+  /**
+   * Status-bar icon appearance driven by the page's ACTUAL theme (the dsh page
+   * can be dark while the system is light, and vice versa — the uiMode poll in
+   * MainActivity only follows the system). `dark` = page wants light icons.
+   */
+  @Command
+  fun setStatusBarAppearance(invoke: Invoke) {
+    val args = invoke.parseArgs(SetStatusBarAppearanceArgs::class.java)
+    val controller = activity.window.insetsController
+    controller?.setSystemBarsAppearance(
+      if (args.dark) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+      WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+    )
+    invoke.resolve()
   }
 }

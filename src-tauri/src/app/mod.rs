@@ -46,6 +46,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       commands::app_info,
       commands::status_bar_height,
+      commands::status_bar_appearance,
       commands::local_start,
       commands::local_stop,
       commands::local_status,
