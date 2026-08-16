@@ -143,7 +143,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*' -name '*.apk' -type f 2>/dev/null | head -1)
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/arm64/release/*' -name '*.apk' -type f 2>/dev/null | head -1)
           if [ -z "$APK" ]; then echo "no release APK found"; exit 1; fi
           BT="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)"
           if $BT/apksigner verify "$APK" 2>/dev/null; then
