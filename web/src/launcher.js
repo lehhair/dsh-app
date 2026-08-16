@@ -68,7 +68,9 @@ function setBadge(state, text) {
     badge.appendChild(svg)
   } else if (state === 'done' || state === 'error') {
     const dot = document.createElement('span')
-    dot.className = `dot ${state}`
+    // `danger`, not `error`: `.error` collides with the generic message
+    // style (min-height: 20px) and shears the dot into an ellipse.
+    dot.className = state === 'error' ? 'dot danger' : 'dot done'
     badge.appendChild(dot)
   }
   badge.appendChild(document.createTextNode(text))
