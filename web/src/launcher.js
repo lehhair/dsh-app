@@ -434,3 +434,10 @@ const syncActive = () => document.body.classList.toggle('inactive', !document.ha
 window.addEventListener('focus', syncActive)
 window.addEventListener('blur', syncActive)
 syncActive()
+
+// F12 opens DevTools (debug builds), like the Electron app — never auto-open.
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'F12') {
+    bridge.openDevTools().catch(() => {})
+  }
+})

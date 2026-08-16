@@ -28,6 +28,7 @@
     "allow-shell-back",
     "allow-shell-new-window",
     "allow-view-reload",
+    "allow-open-devtools",
     "allow-remote-disconnect",
     "allow-remote-list",
     "allow-remote-save",

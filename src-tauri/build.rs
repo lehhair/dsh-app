@@ -16,6 +16,7 @@ fn main() {
     "remote_connect",
     "shell_back",
     "shell_new_window",
+    "open_devtools",
     "view_reload",
     "remote_disconnect",
     "remote_list",

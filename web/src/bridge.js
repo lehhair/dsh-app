@@ -34,6 +34,7 @@ export const bridge = {
   back: () => invoke('shell_back'),
   newWindow: () => invoke('shell_new_window'),
   reload: () => invoke('view_reload'),
+  openDevTools: () => invoke('open_devtools'),
   onConnectionChanged: (callback) => on('connection:changed', callback),
 
   // remote node registry

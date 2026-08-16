@@ -129,6 +129,18 @@ pub fn shell_new_window(app: AppHandle, webview: Webview) -> Result<serde_json::
   Ok(serde_json::json!({ "ok": true }))
 }
 
+/// Open DevTools for the invoking window (debug builds only; F12 from the
+/// shell page — the Electron app's behavior, no auto-open).
+#[tauri::command]
+pub fn open_devtools(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  let win_label = app_origin_gate(&app, &webview)?;
+  #[cfg(debug_assertions)]
+  if let Some(window) = app.get_webview_window(&win_label) {
+    let _ = window.open_devtools();
+  }
+  Ok(serde_json::json!({ "ok": true }))
+}
+
 #[tauri::command]
 pub fn view_reload(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
   let win_label = app_origin_gate(&app, &webview)?;

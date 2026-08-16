@@ -56,6 +56,7 @@ pub fn run() {
       commands::remote_connect,
       commands::shell_back,
       commands::shell_new_window,
+      commands::open_devtools,
       commands::view_reload,
       commands::remote_disconnect,
       commands::remote_list,
@@ -86,11 +87,6 @@ pub fn run() {
       app.manage(secrets::Secrets::new(config_dir));
 
       windows::create_app_window(app.handle())?;
-
-      #[cfg(debug_assertions)]
-      if let Some(window) = app.get_webview_window("main") {
-        window.open_devtools();
-      }
 
       #[cfg(desktop)]
       run_startup_flows(app.handle());
