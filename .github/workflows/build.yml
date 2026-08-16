@@ -137,7 +137,9 @@ jobs:
       - name: Build APK (arm64)
         run: |
           export NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
-          npx tauri android build --apk --target aarch64
+          # --split-per-abi produces the per-ABI APKs (arm64 dir); --target
+          # aarch64 limits the rust build to arm64
+          npx tauri android build --apk --split-per-abi --target aarch64
 
       - name: Sign APK
         shell: bash
