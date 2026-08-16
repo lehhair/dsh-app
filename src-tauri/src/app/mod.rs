@@ -216,10 +216,13 @@ fn run_startup_flows(app: &tauri::AppHandle) {
 fn cleanup_stale_embedded() {
   #[cfg(windows)]
   {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     // The embedded overlay marker is unique to this app's dsh spawns.
     let script = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -like '*embedded-overlay.yml*' } | ForEach-Object { $_.ProcessId }";
     let output = std::process::Command::new("powershell")
       .args(["-NoProfile", "-NonInteractive", "-Command", script])
+      .creation_flags(CREATE_NO_WINDOW)
       .stdin(std::process::Stdio::null())
       .stdout(std::process::Stdio::piped())
       .stderr(std::process::Stdio::null())
@@ -231,6 +234,7 @@ fn cleanup_stale_embedded() {
           if pid > 0 {
             let _ = std::process::Command::new("taskkill")
               .args(["/PID", &pid.to_string(), "/T", "/F"])
+              .creation_flags(CREATE_NO_WINDOW)
               .stdin(std::process::Stdio::null())
               .stdout(std::process::Stdio::null())
               .stderr(std::process::Stdio::null())
