@@ -67,7 +67,22 @@ public class DshNativePlugin extends Plugin {
             };
             dispatcher.addCallback(componentActivity, backCallback);
 
-            WebView wv = new WebView(activity);
+            WebView wv = new WebView(activity) {
+                // Disable the floating text-selection toolbar (the native
+                // copy/share bar that pops up on long-press and lists this
+                // app as a share target with its APK icon). Returning null
+                // suppresses it; selection still works, just no toolbar.
+                // (setCustomSelectionActionModeCallback is gone on API 33+.)
+                @Override
+                public android.view.ActionMode startActionMode(android.view.ActionMode.Callback callback) {
+                    return null;
+                }
+
+                @Override
+                public android.view.ActionMode startActionMode(android.view.ActionMode.Callback callback, int type) {
+                    return null;
+                }
+            };
             // Background matches dsh dark ground; the strip above the WebView
             // (status bar area) shows the same color so it fuses.
             wv.setBackgroundColor(0xFF151517);

@@ -268,17 +268,17 @@
             connect.disabled = true
             connect.textContent = '连接中…'
             const r = await Bridge.connect(node.id)
+            // Always reset — the WebView closes back to this launcher, so a
+            // stuck "连接中…" would leave the button dead on return.
+            connect.disabled = false
+            connect.textContent = '连接'
             if (r && r.error) {
-              connect.disabled = false
-              connect.textContent = '连接'
               const err = document.createElement('p')
               err.className = 'form-error'
               err.style.cssText = 'margin:4px 2px 0;'
               err.textContent = r.error
               row.appendChild(err)
             }
-            // On success the WebView covers the screen; button state no
-            // longer matters until the user closes it.
           })
           const edit = document.createElement('button')
           edit.className = 'btn sm'
