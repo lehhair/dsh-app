@@ -337,7 +337,7 @@ pub async fn reconnect_local_windows(app: &AppHandle, url: &str) {
 }
 
 fn content_size(app: &AppHandle, win_label: &str) -> (f64, f64) {
-  let Some(window) = app.get_webview_window(win_label) else { return (0.0, 0.0) };
+  let Some(window) = app.get_window(win_label) else { return (0.0, 0.0) };
   let Ok(size) = window.inner_size() else { return (0.0, 0.0) };
   let scale = window.scale_factor().unwrap_or(1.0);
   let logical = size.to_logical::<f64>(scale);
@@ -355,23 +355,17 @@ pub async fn connect_into_window(
   name: &str,
   key: Option<&str>,
 ) -> Result<(), String> {
-  let _ = key;
+
   if let Some(key) = key {
     let value = auth::ensure_gateway_session(url, key).await?;
-
     let cookie = auth::build_cookie(url, &value)?;
-    let Some(window) = app.get_webview_window(win_label) else {
+    let Some(window) = app.get_window(win_label) else {
 
       return Err("窗口不可用".into());
     };
     // The window's main webview shares the profile cookie store with child
     // webviews, so setting the session here covers the node view's first load.
-    let main = window
-      .as_ref()
-      .window()
-      .webviews()
-      .into_iter()
-      .find(|w| w.label() == win_label);
+    let main = window.webviews().into_iter().find(|w| w.label() == win_label);
     if let Some(main) = main {
       main.set_cookie(cookie).map_err(|e| format!("设置会话失败：{e}"))?;
     }
@@ -392,23 +386,21 @@ fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Web
 
   let windows = app.state::<Windows>();
   let states = windows.states.lock().unwrap();
-  let meta = states.get(win_label).ok_or_else(|| {
+  let Some(meta) = states.get(win_label) else {
 
-    "窗口不可用".to_string()
-  })?;
+    return Err("窗口不可用".into());
+  };
   let mut views = meta.views.lock().unwrap();
   if let Some(view) = views.get(id) {
     return Ok(view.clone());
   }
-  let window = app.get_webview_window(win_label).ok_or("窗口不可用")?;
+  let window = app.get_window(win_label).ok_or("窗口不可用")?;
   let label = format!("{win_label}-view-{id}");
   let parsed = url::Url::parse(url).map_err(|e| e.to_string())?;
   let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed))
     .initialization_script(inject::NODE_VIEW_SCRIPT);
   let (width, height) = content_size(app, win_label);
   let view = window
-    .as_ref()
-    .window()
     .add_child(
       builder,
       LogicalPosition::new(0.0, TITLEBAR_HEIGHT),
@@ -467,7 +459,10 @@ pub fn back_to_launcher(app: &AppHandle, win_label: &str) {
 pub fn open_settings(app: &AppHandle, win_label: &str) -> Result<(), String> {
   let windows = app.state::<Windows>();
   let states = windows.states.lock().unwrap();
-  let meta = states.get(win_label).ok_or("窗口不可用")?;
+  let Some(meta) = states.get(win_label) else {
+
+    return Err("窗口不可用".into());
+  };
   let mut slot = meta.settings_view.lock().unwrap();
   // Re-create so the settings view always sits on top of any node views.
   if let Some(view) = slot.take() {
@@ -475,7 +470,7 @@ pub fn open_settings(app: &AppHandle, win_label: &str) -> Result<(), String> {
   }
   drop(slot);
   drop(states);
-  let window = app.get_webview_window(win_label).ok_or("窗口不可用")?;
+  let window = app.get_window(win_label).ok_or("窗口不可用")?;
   let label = format!("{win_label}-settings");
   let builder = WebviewBuilder::new(label, WebviewUrl::App("settings.html".into()))
     .transparent(true)
@@ -490,8 +485,6 @@ pub fn open_settings(app: &AppHandle, win_label: &str) -> Result<(), String> {
     });
   let (width, height) = content_size(app, win_label);
   let view = window
-    .as_ref()
-    .window()
     .add_child(
       builder,
       LogicalPosition::new(0.0, TITLEBAR_HEIGHT),
@@ -542,6 +535,7 @@ pub async fn connect_into_window(
   name: &str,
   key: Option<&str>,
 ) -> Result<(), String> {
+
   if let Some(key) = key {
     let value = auth::ensure_gateway_session(url, key).await?;
     let cookie = auth::build_cookie(url, &value)?;
