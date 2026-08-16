@@ -1,0 +1,37 @@
+[package]
+name = "dsh-app"
+version = "0.2.0"
+description = "DeepSeek Harness shell — embedded dsh runtime + remote dsh nodes (Tauri 2)"
+authors = ["lehhair"]
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["cdylib", "rlib", "staticlib"]
+name = "dsh_app_lib"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools", "unstable"] }
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "process", "io-util"] }
+cookie = "0.18"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+log = "0.4"
+
+# OS-keychain secrets on desktop; mobile stores keys in the plain JSON store.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[profile.release]
+strip = true
+lto = true
+panic = "abort"
+codegen-units = 1
+opt-level = "s"

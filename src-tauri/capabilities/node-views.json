@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "node-views",
+  "description": "Minimal permissions for dsh node webviews (remote pages): the injected back button (shell_back) and theme sampler (theme_changed). Everything else is blocked by the launcher-origin gate in Rust.",
+  "webviews": ["main-*", "win-*-*"],
+  "local": false,
+  "remote": {
+    "urls": ["http://*:*", "https://*:*"]
+  },
+  "permissions": [
+    "allow-shell-back",
+    "allow-theme-changed"
+  ]
+}

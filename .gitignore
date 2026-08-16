@@ -4,3 +4,7 @@ resources/
 dist/
 out/
 *.log
+src-tauri/target/
+
+web/dist/
+
