@@ -131,15 +131,16 @@ async function renderInstances() {
   for (const inst of matches) {
     const row = document.createElement('div')
     row.className = 'instance-row'
-    const dot = document.createElement('span')
-    dot.className = 'dot'
-    dot.title = '检测中'
-    row.appendChild(dot)
     const meta = document.createElement('div')
     meta.className = 'meta'
     const name = document.createElement('div')
     name.className = 'name'
-    name.textContent = inst.name
+    // Status dot inline with the name (same as the launcher rows).
+    const dot = document.createElement('span')
+    dot.className = 'dot'
+    dot.title = '检测中'
+    name.appendChild(dot)
+    name.appendChild(document.createTextNode(inst.name))
     if (currentId === inst.id) {
       const pill = document.createElement('span')
       pill.className = 'pill on'
@@ -163,7 +164,7 @@ async function renderInstances() {
         dlgError.textContent = e || '连接失败'
       }
     })
-    row.append(dot, meta, connect)
+    row.append(meta, connect)
     instancesEl.appendChild(row)
     bridge.remote.health(inst.id).then((h) => {
       dot.className = h.status === 'online' ? 'dot done'
