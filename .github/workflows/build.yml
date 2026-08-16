@@ -185,7 +185,9 @@ jobs:
       - name: Detect app version
         id: ver
         shell: bash
-        run: echo "v=$(node -p \"require('./src-tauri/tauri.conf.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          V=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "v=$V" >> "$GITHUB_OUTPUT"
 
       - name: Flatten + rename for the release (flavor-prefixed)
         shell: bash
