@@ -10,8 +10,7 @@
   },
   "plugins": {
     "SystemBars": {
-      "insetsHandling": "css",
-      "style": "DEFAULT"
+      "insetsHandling": "disable"
     }
   }
 }

@@ -361,6 +361,28 @@
       }
 
       refresh()
+
+      // ---- safe-area: pad the header below the status bar ----
+      // SystemBars insetsHandling is disabled; read the status bar height
+      // natively and expose it as --safe-area-inset-top for the CSS.
+      (function applySafeArea() {
+        const root = document.documentElement
+        const set = (v) => root.style.setProperty('--safe-area-inset-top', v + 'px')
+        const tryRead = () => {
+          const DshNative = window.Capacitor?.Plugins?.DshNative
+          if (DshNative?.getStatusBarHeight) {
+            DshNative.getStatusBarHeight().then((r) => {
+              if (r && typeof r.height === 'number') set(r.height)
+            }).catch(() => {})
+            return true
+          }
+          return false
+        }
+        if (!tryRead() && window.Capacitor?.addListener) {
+          window.Capacitor.addListener('capacitorReady', tryRead)
+        }
+        // Fallback: env() handled by CSS itself.
+      })()
     </script>
   </body>
 </html>

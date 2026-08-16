@@ -163,6 +163,25 @@ public class DshNativePlugin extends Plugin {
     }
 
     /**
+     * Status bar height in CSS px (dp), read natively so the launcher can pad
+     * its header below it — reliable on every Android version, unlike the
+     * env(safe-area-inset-top) fallback on old WebViews.
+     */
+    @PluginMethod
+    public void getStatusBarHeight(final PluginCall call) {
+        int resourceId = getActivity().getResources().getIdentifier(
+                "status_bar_height", "dimen", "android");
+        int px = resourceId > 0
+                ? getActivity().getResources().getDimensionPixelSize(resourceId)
+                : 0;
+        float density = getActivity().getResources().getDisplayMetrics().density;
+        JSObject result = new JSObject();
+        result.put("height", Math.round(px / density));
+        result.put("px", px);
+        call.resolve(result);
+    }
+
+    /**
      * POST {origin}/_gateway/login with key=...&next=/ (the same login the
      * desktop shell performs) and return the dsh_gateway_key cookie value, so
      * the launcher can hand it to {@link #open} for pre-injection. Done on a
@@ -178,7 +197,10 @@ public class DshNativePlugin extends Plugin {
         }
         Thread t = new Thread(() -> {
             try {
-                java.net.URL u = new java.net.URL(url);
+                // Login endpoint is {origin}/_gateway/login (the desktop shell
+                // posts there too); POSTing to the bare origin returns 401.
+                String loginUrl = url.replaceAll("/+$", "") + "/_gateway/login";
+                java.net.URL u = new java.net.URL(loginUrl);
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) u.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
