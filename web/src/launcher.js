@@ -98,7 +98,7 @@ async function refresh() {
   if (s.running) {
     const logs = await bridge.logs()
     log.hidden = false
-    log.textContent = logs.join('').slice(-4000)
+    log.textContent = logs.join('\n').slice(-4000)
     log.scrollTop = log.scrollHeight
   }
 }
@@ -113,17 +113,17 @@ startBtn.addEventListener('click', async () => {
     // the boot log next to the dsh output.
     setState('error')
     log.hidden = false
-    log.textContent = `${e || '启动失败'}\n${(await bridge.logs().catch(() => [])).join('').slice(-4000)}`
+    log.textContent = `${e || '启动失败'}\n${(await bridge.logs().catch(() => [])).join('\n').slice(-4000)}`
     return
   }
   if (result.ok) {
     setState('running', result.port, result.url)
     log.hidden = false
-    log.textContent = (await bridge.logs()).join('').slice(-4000)
+    log.textContent = (await bridge.logs()).join('\n').slice(-4000)
   } else {
     setState('error')
     log.hidden = false
-    log.textContent = `启动失败\n${(await bridge.logs().catch(() => [])).join('').slice(-4000)}`
+    log.textContent = `启动失败\n${(await bridge.logs().catch(() => [])).join('\n').slice(-4000)}`
   }
 })
 
