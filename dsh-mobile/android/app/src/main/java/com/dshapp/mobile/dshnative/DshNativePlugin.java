@@ -83,12 +83,14 @@ public class DshNativePlugin extends Plugin {
                 }
             }, "DshNativeBridge");
 
-            // Place the WebView below the status bar: the view gets a top
-            // margin equal to the status bar height (physical px — native
-            // layout, not page CSS). The page's own layout is untouched, so
-            // no scrollbar appears; the strip above the WebView shows the
-            // window background (page color), fusing with the page.
+            // Full-screen immersive: the WebView spans the whole screen and
+            // the page draws behind the status bar. Push the page's content
+            // below the bar by padding body (CSS px) with box-sizing:border-box
+            // so the fixed-height SPA stays inside the viewport — #root keeps
+            // 100% and lands in the padded content area, no overflow, no
+            // scrollbar, full-bleed background preserved.
             final int statusBarPx = getStatusBarHeightPx();
+            final int statusBarCssPx = Math.round(statusBarPx / getActivity().getResources().getDisplayMetrics().density);
             androidx.core.view.OnApplyWindowInsetsListener insetsListener = (view, insets) ->
                     androidx.core.view.WindowInsetsCompat.CONSUMED;
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(wv, insetsListener);
@@ -96,6 +98,15 @@ public class DshNativePlugin extends Plugin {
                 @Override
                 public void onPageFinished(WebView view, String pageUrl) {
                     super.onPageFinished(view, pageUrl);
+                    if (statusBarCssPx > 0) {
+                        String padJs = "(function(){if(window.__dshPad)return;window.__dshPad=true;" +
+                            "var s=document.createElement('style');" +
+                            "s.textContent='html,body{height:100%}'" +
+                            "+'body{box-sizing:border-box;padding-top:" + statusBarCssPx + "px!important}'" +
+                            "+'#root{height:100%}';" +
+                            "document.head.appendChild(s);})();";
+                        view.evaluateJavascript(padJs, null);
+                    }
                     if (injectScript != null && !injectScript.isEmpty()) {
                         view.evaluateJavascript(injectScript, null);
                     }
@@ -123,12 +134,11 @@ public class DshNativePlugin extends Plugin {
             // The gateway accepts Bearer <key> directly (verified: 200), a
             // belt-and-braces against any SameSite edge case on the cookie.
 
-            // Full-screen overlay above the Capacitor web content, pushed
-            // below the status bar via top margin (physical px).
+            // Full-screen overlay above the Capacitor web content (no top
+            // margin — the page itself draws behind the status bar).
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT);
-            params.topMargin = statusBarPx;
             ((ViewGroup) activity.getWindow().getDecorView()).addView(wv, params);
             webView = wv;
             if (authKey != null && !authKey.isEmpty()) {
