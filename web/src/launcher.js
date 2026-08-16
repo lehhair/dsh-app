@@ -111,16 +111,27 @@ async function refresh() {
 startBtn.addEventListener('click', async () => {
   error.textContent = ''
   setState('starting')
-  const result = await bridge.startLocal()
+  let result
+  try {
+    result = await bridge.startLocal()
+  } catch (e) {
+    // A real failure rejects the invoke (Err(String)); surface it instead of
+    // leaving the badge stuck on 启动中.
+    setState('error')
+    error.textContent = e || '启动失败'
+    log.hidden = false
+    log.textContent = (await bridge.logs().catch(() => [])).join('').slice(-4000)
+    return
+  }
   if (result.ok) {
     setState('running', result.port, result.url)
     log.hidden = false
     log.textContent = (await bridge.logs()).join('').slice(-4000)
   } else {
     setState('error')
-    error.textContent = result.error || '启动失败'
+    error.textContent = '启动失败'
     log.hidden = false
-    log.textContent = (result.logs || []).join('').slice(-4000)
+    log.textContent = (await bridge.logs().catch(() => [])).join('').slice(-4000)
   }
 })
 

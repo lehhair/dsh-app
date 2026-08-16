@@ -53,8 +53,18 @@ pub fn status_bar_height(app: AppHandle) -> f64 {
 // ---- embedded local instance ----
 
 #[tauri::command]
-pub async fn local_start(app: AppHandle, state: State<'_, DshService>) -> Result<service::LocalInfo, String> {
-  service::start_local(&app, &state).await
+pub async fn local_start(app: AppHandle, state: State<'_, DshService>) -> Result<serde_json::Value, String> {
+  // Wrapped like every other command: the frontend treats `ok` as the
+  // success flag. The bare LocalInfo has no such field — callers checking
+  // `result.ok` would misread a successful boot as a failure.
+  let info = service::start_local(&app, &state).await?;
+  Ok(serde_json::json!({
+    "ok": true,
+    "running": info.running,
+    "starting": info.starting,
+    "port": info.port,
+    "url": info.url,
+  }))
 }
 
 #[tauri::command]

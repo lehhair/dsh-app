@@ -78,17 +78,29 @@ async function renderLocal() {
 }
 
 localToggle.addEventListener('click', async () => {
+  dlgError.textContent = ''
   const s = await bridge.status()
   if (s.running) await bridge.stopLocal()
-  else await bridge.startLocal()
+  else {
+    try {
+      await bridge.startLocal()
+    } catch (e) {
+      dlgError.textContent = e || '启动失败'
+    }
+  }
   renderLocal()
 })
 
 localEnter.addEventListener('click', async () => {
+  dlgError.textContent = ''
   const s = await bridge.status()
   if (s.running) {
-    await bridge.connect(s.url)
-    await bridge.settings.close()
+    try {
+      await bridge.connect(s.url)
+      await bridge.settings.close()
+    } catch (e) {
+      dlgError.textContent = e || '连接失败'
+    }
   }
 })
 
