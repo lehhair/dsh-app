@@ -3,7 +3,6 @@ name: build
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -168,17 +167,25 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------
-  # Release: tag v* → draft release with all installers + the updater
-  # payload (bundled Windows exe).
+  # Release: every successful master build updates the v<version> release
+  # with fresh installers + the updater payload (rolling "latest" release).
   # ---------------------------------------------------------------
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     needs: [desktop, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Detect app version
+        id: ver
+        shell: bash
+        run: echo "v=$(node -p \"require('./src-tauri/tauri.conf.json').version\")" >> "$GITHUB_OUTPUT"
 
       - name: Flatten + rename for the release (flavor-prefixed)
         shell: bash
@@ -203,6 +210,9 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: dsh-app v${{ steps.ver.outputs.v }}
           generate_release_notes: true
           files: out/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
