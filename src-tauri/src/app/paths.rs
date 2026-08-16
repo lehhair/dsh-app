@@ -97,19 +97,27 @@ impl Paths {
     // is installed, so the UI offers 安装 dsh instead of the external message.
     let bundled = managed_runtime || ships_node;
 
+    // The dsh package lives under `node_modules` of the runtime root — EXCEPT
+    // for the external flavor, where `global_npm_root()` already IS the global
+    // `node_modules` dir. Joining `node_modules` again yields a path that can
+    // never exist (`...\npm\node_modules\node_modules\@deepseek-ai\dsh\...`),
+    // which made the external flavor report 未找到全局 dsh even though the
+    // global install was present. Detect by suffix: a runtime root that ends
+    // in `node_modules` is the global dir itself, not a project dir.
+    let pkg_dir = if runtime_root.ends_with("node_modules") {
+      runtime_root.clone()
+    } else {
+      runtime_root.join("node_modules")
+    };
+
     Paths {
       dsh_runtime: runtime_root.clone(),
-      dsh_bin: runtime_root
-        .join("node_modules")
+      dsh_bin: pkg_dir
         .join("@deepseek-ai")
         .join("dsh")
         .join("lib")
         .join("bin.js"),
-      dsh_pkg: runtime_root
-        .join("node_modules")
-        .join("@deepseek-ai")
-        .join("dsh")
-        .join("package.json"),
+      dsh_pkg: pkg_dir.join("@deepseek-ai").join("dsh").join("package.json"),
       overlay: pick("embedded-overlay.yml"),
       node_exe,
       npm_cli,
@@ -159,6 +167,12 @@ pub fn resolve_diagnostics(app: &AppHandle) -> String {
   } else {
     lines.push("global_npm_root() -> None".to_string());
   }
+  // Final resolved dsh binary the launcher would spawn (the actual failure
+  // point: an extra `node_modules` join made this path never exist).
+  let paths = Paths::resolve(app);
+  lines.push(format!("resolved dsh_bin: {} -> {}", paths.dsh_bin.display(), paths.dsh_bin.exists()));
+  lines.push(format!("resolved dsh_pkg: {} -> {}", paths.dsh_pkg.display(), paths.dsh_pkg.exists()));
+  lines.push(format!("bundled: {}", paths.bundled));
   lines.join("\n")
 }
 
