@@ -6,8 +6,16 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+env:
+  # Embedded dsh version provisioned for the bundled flavor (npm i --prefix .dsh-runtime).
+  DSH_VERSION: '0.1.0-rc.6'
+
 jobs:
-  build:
+  # ---------------------------------------------------------------
+  # Desktop: BOTH flavors per platform — external (uses the PC's own
+  # node + global dsh) and bundled (embeds node + .dsh-runtime).
+  # ---------------------------------------------------------------
+  desktop:
     strategy:
       fail-fast: false
       matrix:
@@ -33,65 +41,157 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # External flavor: no bundled node / .dsh-runtime — the installers are
-      # small and the built app uses the PC's own node + global dsh. (The
-      # bundled flavor needs per-OS node + a provisioned .dsh-runtime; add a
-      # separate job when ready.)
-      - name: Provision external flavor resources
-        run: node scripts/bundle-resources.mjs --external
+      - name: Build external flavor
+        shell: bash
+        run: |
+          node scripts/bundle-resources.mjs --external
+          npm run tauri -- build
+          mkdir -p release/external
+          cp -r src-tauri/target/release/bundle/* release/external/ 2>/dev/null || true
+          # standalone binary (small update payload for the launcher updater)
+          cp src-tauri/target/release/dsh-app* release/external/ 2>/dev/null || true
 
-      - name: Build (Tauri)
-        run: npm run tauri -- build
+      - name: Install embedded dsh
+        shell: bash
+        run: npm install --prefix .dsh-runtime @deepseek-ai/dsh@$DSH_VERSION --no-audit --no-fund
+
+      - name: Build bundled flavor
+        shell: bash
+        run: |
+          node scripts/bundle-resources.mjs
+          npm run tauri -- build
+          mkdir -p release/bundled
+          cp -r src-tauri/target/release/bundle/* release/bundled/ 2>/dev/null || true
+          cp src-tauri/target/release/dsh-app* release/bundled/ 2>/dev/null || true
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: installers-${{ matrix.platform }}
-          path: |
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/**/*.exe
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.app
-            src-tauri/target/release/bundle/**/*.AppImage
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.rpm
-          if-no-files-found: ignore
+          name: desktop-${{ matrix.platform }}
+          path: release
+          retention-days: 1
 
-      - name: Upload standalone binary (launcher self-update payload)
+  # ---------------------------------------------------------------
+  # Android: arm64 only (no v7) — the tauri CLI flow works natively on
+  # the Linux runner (the Windows Developer-Mode symlink issue does not
+  # apply here). Signing is driven by ANDROID_KEY_* secrets; without
+  # them the unsigned APK is still built and uploaded.
+  # ---------------------------------------------------------------
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: sdkmanager "ndk;29.0.14206865"
+
+      - name: Install Rust stable + android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: android-arm64
+
+      - name: Gradle cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            src-tauri/gen/android/.gradle
+          key: gradle-arm64-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-arm64-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Configure release signing (when secrets present)
+        if: ${{ secrets.ANDROID_KEY_ALIAS != '' }}
+        run: |
+          cd src-tauri/gen/android
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
+          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
+          echo "${{ secrets.ANDROID_KEY_BASE64 }}" | base64 -d > $RUNNER_TEMP/keystore.jks
+          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
+
+      - name: Build APK (arm64)
+        run: npx tauri android build --apk --target aarch64
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+
+      - name: Sign APK (fallback: unsigned)
+        shell: bash
+        run: |
+          mkdir -p release
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -path '*/release/*' -name '*.apk' -type f 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then echo "no release APK found"; exit 1; fi
+          BT="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)"
+          if $BT/apksigner verify "$APK" 2>/dev/null; then
+            cp "$APK" release/dsh-app-android-arm64.apk
+          else
+            # debug-signed is fine for sideloading; keep the release build otherwise
+            cp "$APK" release/dsh-app-android-arm64-unsigned.apk
+          fi
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.platform }}
-          path: |
-            src-tauri/target/release/dsh-app
-            src-tauri/target/release/dsh-app.exe
-          if-no-files-found: ignore
+          name: android-arm64
+          path: release
+          retention-days: 1
 
+  # ---------------------------------------------------------------
+  # Release: tag v* → draft release with all installers + the updater
+  # payload (bundled Windows exe).
+  # ---------------------------------------------------------------
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [desktop, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
 
-      # The launcher updater prefers an asset whose name contains "dsh-app"
-      # over the NSIS installer (also .exe) — give the Windows binary that
-      # name so it wins.
-      - name: Name the Windows binary for the updater
+      - name: Flatten + rename for the release (flavor-prefixed)
         shell: bash
         run: |
-          mv artifacts/dsh-app.exe artifacts/dsh-app-windows-x86_64.exe || true
+          mkdir -p out
+          find artifacts -type f | while read f; do
+            base=$(basename "$f")
+            case "$f" in
+              *external*) name="dsh-app-external-$base" ;;
+              *bundled*)  name="dsh-app-bundled-$base" ;;
+              *android*)  name="$base" ;;
+              *)          name="$base" ;;
+            esac
+            cp "$f" "out/$name"
+          done
+          # the launcher updater prefers an asset containing "dsh-app" and
+          # ending in .exe — point it at the bundled Windows binary
+          if ls out/dsh-app-bundled-dsh-app.exe >/dev/null 2>&1; then
+            mv out/dsh-app-bundled-dsh-app.exe out/dsh-app-windows-x86_64.exe
+          fi
+          ls out
 
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
-          files: |
-            artifacts/*.msi
-            artifacts/*.exe
-            artifacts/*.dmg
-            artifacts/*.AppImage
-            artifacts/*.deb
-            artifacts/*.rpm
+          files: out/*
