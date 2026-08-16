@@ -79,6 +79,10 @@ function setBadge(state, text) {
 
 // status: 'idle' | 'starting' | 'running' | 'error'
 function setState(status, port, url) {
+  // A later state supersedes an earlier failure message: a start that fails
+  // transiently and then boots (retry / restore) must not leave stale red
+  // text under a running instance.
+  error.textContent = ''
   current = status === 'running' ? { port, url } : null
   if (status === 'running') setBadge('done', '运行中')
   else if (status === 'starting') setBadge('ongoing', '启动中')
