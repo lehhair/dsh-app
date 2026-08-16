@@ -54,6 +54,12 @@
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
+      /* Android WebView paints a translucent blue square on tap (default tap
+         highlight) plus a focus ring on tapped elements — neither fits the
+         flat dsh look. The app's own focus states (field borders, hover
+         fills) stay. */
+      * { -webkit-tap-highlight-color: transparent; }
+      body.mobile *:focus { outline: none; }
 
       /* dsh scrollbar skin (mirrors ui-theme scrollbar.css): 8px slim bar,
          transparent track, 4px-radius thumb, hover deepens. */
