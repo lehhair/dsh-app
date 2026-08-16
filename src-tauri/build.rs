@@ -14,6 +14,7 @@ fn main() {
     "dsh_diagnose",
     "dsh_check_update",
     "dsh_update",
+    "dsh_update_cancel",
     "dsh_install",
     "check_launcher_update",
     "launcher_update",

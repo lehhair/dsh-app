@@ -67,6 +67,7 @@ pub fn run() {
       commands::dsh_diagnose,
       commands::dsh_check_update,
       commands::dsh_update,
+      commands::dsh_update_cancel,
       commands::dsh_install,
       commands::check_launcher_update,
       commands::launcher_update,

@@ -134,6 +134,14 @@ pub async fn dsh_update(app: AppHandle, target: String) -> Result<update::Update
   update::update_dsh(&app, &target).await
 }
 
+/// Cancel the in-flight dsh update/install (kills the npm child).
+#[tauri::command]
+pub fn dsh_update_cancel(app: AppHandle) -> Result<serde_json::Value, String> {
+  let service = app.state::<service::DshService>();
+  let cancelled = service::cancel_update(&service);
+  Ok(serde_json::json!({ "ok": true, "cancelled": cancelled }))
+}
+
 /// Install the latest dsh into the user-data runtime dir (bundled installer
 /// ships node + npm only — the runtime is installed on demand).
 #[tauri::command]

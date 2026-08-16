@@ -23,6 +23,10 @@ pub struct DshService {
   /// Serializes `start_local`: two concurrent callers (e.g. the boot
   /// auto-start and a manual start) must not each spawn a node.
   pub lock: TokioMutex<()>,
+  /// Cancel signal for the in-flight dsh update/install, if any. The update
+  /// task stores its Notify here; dsh_update_cancel fires it, and the task
+  /// kills its npm child in a select! branch.
+  pub update_cancel: Arc<Mutex<Option<Arc<tokio::sync::Notify>>>>,
 }
 
 pub struct Running {
@@ -189,6 +193,24 @@ pub fn stop_local(service: &DshService) {
   }
 }
 
+/// Cancel the in-flight dsh update/install, if any: fire its cancel signal
+/// (the update task kills the npm child). Returns whether something was
+/// actually running.
+pub fn cancel_update(service: &DshService) -> bool {
+  let signal = service.update_cancel.lock().unwrap().take();
+  if let Some(signal) = signal {
+    signal.notify_one();
+    true
+  } else {
+    false
+  }
+}
+
+/// Register the cancel signal for an in-flight update (None clears it).
+pub fn set_update_cancel(service: &DshService, signal: Option<Arc<tokio::sync::Notify>>) {
+  *service.update_cancel.lock().unwrap() = signal;
+}
+
 pub fn local_info(service: &DshService) -> LocalInfo {
   let running = service.running.lock().unwrap();
   match running.as_ref() {
@@ -262,7 +284,7 @@ fn pick_free_port() -> std::io::Result<u16> {
   Ok(listener.local_addr()?.port())
 }
 
-fn kill_tree(pid: u32) {
+pub fn kill_tree(pid: u32) {
   #[cfg(windows)]
   {
     use std::os::windows::process::CommandExt;

@@ -24,6 +24,7 @@
     "allow-dsh-diagnose",
     "allow-dsh-check-update",
     "allow-dsh-update",
+    "allow-dsh-update-cancel",
     "allow-dsh-install",
     "allow-check-launcher-update",
     "allow-launcher-update",

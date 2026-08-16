@@ -113,7 +113,9 @@ startBtn.addEventListener('click', async () => {
   if (!external && !runtimeInstalled) {
     log.hidden = false
     log.textContent = '正在安装 dsh 运行时…'
+    setUpdateInProgress(true)
     const r = await bridge.install().catch((e) => ({ ok: false, error: e || '安装失败' }))
+    setUpdateInProgress(false)
     renderDshVersion()
     if (!r.ok) {
       setState('error')
@@ -299,11 +301,31 @@ async function checkLauncherUpdate() {
   }
 }
 
+const cancelUpdateBtn = document.getElementById('cancel-update')
+let updateInProgress = false
+
+// While an update/install runs, offer a cancel button; clear it afterwards.
+function setUpdateInProgress(inProgress) {
+  updateInProgress = inProgress
+  cancelUpdateBtn.hidden = !inProgress
+}
+
+cancelUpdateBtn.addEventListener('click', async () => {
+  cancelUpdateBtn.disabled = true
+  try {
+    await bridge.cancelUpdate()
+    setUpdateStatus('正在取消…', null)
+  } finally {
+    cancelUpdateBtn.disabled = false
+  }
+})
+
 checkUpdateBtn.addEventListener('click', async () => {
   checkUpdateBtn.disabled = true
   // Bundled flavor with no runtime yet: this button installs dsh instead.
   if (!external && !runtimeInstalled) {
     setUpdateStatus('正在安装 dsh…', null)
+    setUpdateInProgress(true)
     try {
       const r = await bridge.install()
       if (r.ok) {
@@ -312,6 +334,7 @@ checkUpdateBtn.addEventListener('click', async () => {
         setUpdateStatus(`安装失败：${r.error || '未知错误'}`, 'err')
       }
     } finally {
+      setUpdateInProgress(false)
       checkUpdateBtn.disabled = false
       renderDshVersion() // refresh label + state after the install
     }
@@ -341,16 +364,20 @@ doUpdateBtn.addEventListener('click', async () => {
   doUpdateBtn.disabled = true
   checkUpdateBtn.disabled = true
   setUpdateStatus('正在更新…', null)
+  setUpdateInProgress(true)
   try {
     const r = await bridge.update(pendingUpdate.latest)
     if (r.ok) {
       setUpdateStatus(`已更新至 v${r.version}`, 'ok')
       doUpdateBtn.hidden = true
       pendingUpdate = null
+    } else if (r.error === '已取消') {
+      setUpdateStatus('已取消更新', 'err')
     } else {
       setUpdateStatus(`更新失败：${r.error || '未知错误'}`, 'err')
     }
   } finally {
+    setUpdateInProgress(false)
     doUpdateBtn.disabled = false
     checkUpdateBtn.disabled = false
   }

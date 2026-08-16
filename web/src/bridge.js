@@ -27,6 +27,7 @@ export const bridge = {
   checkUpdate: () => invoke('dsh_check_update'),
   update: (target) => invoke('dsh_update', { target }),
   install: () => invoke('dsh_install'),
+  cancelUpdate: () => invoke('dsh_update_cancel'),
   onUpdateLog: (callback) => on('dsh:update-log', callback),
   // launcher self-update (GitHub Releases)
   checkLauncherUpdate: () => invoke('check_launcher_update'),

@@ -185,6 +185,9 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
     .map_err(|e| format!("无法启动 node：{e}"))?;
   let stdout = child.stdout.take();
   let stderr = child.stderr.take();
+  // Register a cancel signal so the user can abort this install.
+  let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
+  service::set_update_cancel(&service, Some(cancel.clone()));
   let app_for_lines = app.clone();
   if let Some(out) = stdout {
     tokio::spawn(stream_lines(out, app_for_lines.clone()));
@@ -193,10 +196,29 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
     tokio::spawn(stream_lines(err, app_for_lines));
   }
 
-  let status = child
-    .wait()
-    .await
-    .map_err(|e| format!("npm 进程异常：{e}"))?;
+  let status = tokio::select! {
+    s = child.wait() => s.map_err(|e| format!("npm 进程异常：{e}"))?,
+    _ = cancel.notified() => {
+      // User cancelled: kill the npm tree, then report 已取消.
+      #[cfg(windows)]
+      if let Some(pid) = child.id() {
+        service::kill_tree(pid);
+      }
+      let _ = child.kill();
+      let _ = child.wait().await;
+      service::set_update_cancel(&service, None);
+      notify("已取消更新");
+      if was_running {
+        let _ = service::start_local(app, &service).await;
+      }
+      return Ok(UpdateResult {
+        ok: false,
+        version: None,
+        error: Some("已取消".into()),
+      });
+    }
+  };
+  service::set_update_cancel(&service, None);
   let code = status.code().unwrap_or(-1);
 
   if code != 0 {
@@ -233,6 +255,7 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
 /// is installed here on demand, then resolved like any other managed runtime.
 pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
   let paths = Paths::resolve(app);
+  let service = app.state::<DshService>();
   let target = app
     .path()
     .app_data_dir()
@@ -266,6 +289,9 @@ pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
     .map_err(|e| format!("无法启动 node：{e}"))?;
   let stdout = child.stdout.take();
   let stderr = child.stderr.take();
+  // Register a cancel signal so the user can abort this install.
+  let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
+  service::set_update_cancel(&service, Some(cancel.clone()));
   let app_for_lines = app.clone();
   if let Some(out) = stdout {
     tokio::spawn(stream_lines(out, app_for_lines.clone()));
@@ -274,10 +300,25 @@ pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
     tokio::spawn(stream_lines(err, app_for_lines));
   }
 
-  let status = child
-    .wait()
-    .await
-    .map_err(|e| format!("npm 进程异常：{e}"))?;
+  let status = tokio::select! {
+    s = child.wait() => s.map_err(|e| format!("npm 进程异常：{e}"))?,
+    _ = cancel.notified() => {
+      #[cfg(windows)]
+      if let Some(pid) = child.id() {
+        service::kill_tree(pid);
+      }
+      let _ = child.kill();
+      let _ = child.wait().await;
+      service::set_update_cancel(&service, None);
+      notify("已取消安装");
+      return Ok(UpdateResult {
+        ok: false,
+        version: None,
+        error: Some("已取消".into()),
+      });
+    }
+  };
+  service::set_update_cancel(&service, None);
   let code = status.code().unwrap_or(-1);
   if code != 0 {
     notify(&format!("安装失败（npm 退出码 {code}）"));
