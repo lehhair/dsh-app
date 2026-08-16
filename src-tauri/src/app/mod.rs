@@ -90,7 +90,16 @@ pub fn run() {
       windows::create_app_window(app.handle())?;
 
       #[cfg(desktop)]
-      run_startup_flows(app.handle());
+      {
+        // Kill embedded dsh nodes orphaned by a crashed / force-killed shell
+        // session (kill-on-exit cannot run then). The command line carries
+        // the embedded overlay marker, so unrelated node processes (dev
+        // servers, the harness itself) are untouched. Without this, every
+        // crash leaks an instance that keeps running — the accumulating load
+        // and port pressure eventually trip the 90s boot health timeout.
+        cleanup_stale_embedded();
+        run_startup_flows(app.handle());
+      }
       Ok(())
     })
     .on_window_event(|window, event| match event {
@@ -143,7 +152,16 @@ fn run_startup_flows(app: &tauri::AppHandle) {
     }
 
     let store = app.state::<Store>();
-    if store.shell_bool("autoStartLocal") {
+    let last = store.shell_get("lastNode");
+    let restore_kind = last
+      .as_ref()
+      .and_then(|v| v.get("type"))
+      .and_then(|t| t.as_str())
+      .map(str::to_string);
+    // When the restore target is the local instance, enter_local boots and
+    // connects it — auto-starting here too would spawn a second node (the
+    // start_local mutex serializes them, but the extra boot is wasted).
+    if store.shell_bool("autoStartLocal") && restore_kind.as_deref() != Some("local") {
       let app = app.clone();
       tauri::async_runtime::spawn(async move {
         let service = app.state::<DshService>();
@@ -152,13 +170,7 @@ fn run_startup_flows(app: &tauri::AppHandle) {
     }
 
     if store.shell_bool("restoreLastNode") {
-      let last = store.shell_get("lastNode");
-      let kind = last
-        .as_ref()
-        .and_then(|v| v.get("type"))
-        .and_then(|t| t.as_str())
-        .map(str::to_string);
-      match kind.as_deref() {
+      match restore_kind.as_deref() {
         Some("remote") => {
           let id = last
             .as_ref()
@@ -190,6 +202,49 @@ fn run_startup_flows(app: &tauri::AppHandle) {
       }
     }
   }
+
+/// Kill embedded dsh node processes from earlier shell sessions (see the
+/// call site in `setup`). Runs synchronously before any fresh start: a
+/// background sweep could race the boot's own spawn and kill the new node
+/// (it matches the same command-line marker).
+#[cfg(desktop)]
+fn cleanup_stale_embedded() {
+  #[cfg(windows)]
+  {
+    // The embedded overlay marker is unique to this app's dsh spawns.
+    let script = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -like '*embedded-overlay.yml*' } | ForEach-Object { $_.ProcessId }";
+    let output = std::process::Command::new("powershell")
+      .args(["-NoProfile", "-NonInteractive", "-Command", script])
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::piped())
+      .stderr(std::process::Stdio::null())
+      .output();
+    if let Ok(output) = output {
+      let Ok(text) = String::from_utf8(output.stdout) else { return };
+      for line in text.lines() {
+        if let Ok(pid) = line.trim().parse::<u32>() {
+          if pid > 0 {
+            let _ = std::process::Command::new("taskkill")
+              .args(["/PID", &pid.to_string(), "/T", "/F"])
+              .stdin(std::process::Stdio::null())
+              .stdout(std::process::Stdio::null())
+              .stderr(std::process::Stdio::null())
+              .spawn();
+          }
+        }
+      }
+    }
+  }
+  #[cfg(not(windows))]
+  {
+    let _ = std::process::Command::new("pkill")
+      .args(["-9", "-f", "embedded-overlay.yml"])
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::null())
+      .stderr(std::process::Stdio::null())
+      .spawn();
+  }
+}
 
 /// Show the local view immediately (dark loading ground), boot dsh, connect.
 #[cfg(desktop)]

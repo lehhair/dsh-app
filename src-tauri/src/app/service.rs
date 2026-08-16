@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncBufReadExt;
 use tokio::process::Command as TokioCommand;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 const LOG_CAP: usize = 5000;
@@ -20,6 +20,9 @@ const LOG_CAP: usize = 5000;
 pub struct DshService {
   pub running: Arc<Mutex<Option<Running>>>,
   pub logs: Arc<Mutex<VecDeque<String>>>,
+  /// Serializes `start_local`: two concurrent callers (e.g. the boot
+  /// auto-start and a manual start) must not each spawn a node.
+  pub lock: TokioMutex<()>,
 }
 
 pub struct Running {
@@ -40,6 +43,11 @@ pub struct LocalInfo {
 }
 
 pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalInfo, String> {
+  // Serialize concurrent starts — the second caller waits for the first to
+  // finish booting and then sees the settled state, instead of spawning a
+  // second node (which would orphan one instance).
+  let _guard = service.lock.lock().await;
+
   let existing = {
     let running = service.running.lock().unwrap();
     running.as_ref().map(|r| (r.ready, r.port, r.url.clone()))
