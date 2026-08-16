@@ -1,0 +1,97 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+          - platform: ubuntu-22.04
+          - platform: windows-latest
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # External flavor: no bundled node / .dsh-runtime — the installers are
+      # small and the built app uses the PC's own node + global dsh. (The
+      # bundled flavor needs per-OS node + a provisioned .dsh-runtime; add a
+      # separate job when ready.)
+      - name: Provision external flavor resources
+        run: node scripts/bundle-resources.mjs --external
+
+      - name: Build (Tauri)
+        run: npm run tauri -- build
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.platform }}
+          path: |
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.app
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.rpm
+          if-no-files-found: ignore
+
+      - name: Upload standalone binary (launcher self-update payload)
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform }}
+          path: |
+            src-tauri/target/release/dsh-app
+            src-tauri/target/release/dsh-app.exe
+          if-no-files-found: ignore
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # The launcher updater prefers an asset whose name contains "dsh-app"
+      # over the NSIS installer (also .exe) — give the Windows binary that
+      # name so it wins.
+      - name: Name the Windows binary for the updater
+        shell: bash
+        run: |
+          mv artifacts/dsh-app.exe artifacts/dsh-app-windows-x86_64.exe || true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/*.msi
+            artifacts/*.exe
+            artifacts/*.dmg
+            artifacts/*.AppImage
+            artifacts/*.deb
+            artifacts/*.rpm

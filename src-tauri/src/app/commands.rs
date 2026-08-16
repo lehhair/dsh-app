@@ -139,11 +139,12 @@ pub struct LauncherUpdateInfo {
   pub notes: Option<String>,
 }
 
-/// Update channel: `DSH_UPDATE_OWNER` / `DSH_UPDATE_REPO` (empty disables).
+/// Update channel: `DSH_UPDATE_OWNER` / `DSH_UPDATE_REPO` override the
+/// default `lehhair/dsh-app`.
 fn launcher_repo() -> (String, String) {
   (
-    std::env::var("DSH_UPDATE_OWNER").unwrap_or_default(),
-    std::env::var("DSH_UPDATE_REPO").unwrap_or_default(),
+    std::env::var("DSH_UPDATE_OWNER").unwrap_or_else(|_| "lehhair".into()),
+    std::env::var("DSH_UPDATE_REPO").unwrap_or_else(|_| "dsh-app".into()),
   )
 }
 
@@ -199,11 +200,22 @@ pub async fn check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo,
     return Ok(none());
   }
   let assets = json.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
-  let asset = assets.iter().find(|a| {
-    a.get("name")
-      .and_then(|n| n.as_str())
-      .is_some_and(|n| n.ends_with(".exe"))
-  });
+  // Prefer the standalone app binary (named dsh-app-*) over the NSIS
+  // installer (also an .exe) — the update swaps the running exe in place.
+  let asset = assets
+    .iter()
+    .find(|a| {
+      a.get("name")
+        .and_then(|n| n.as_str())
+        .is_some_and(|n| n.contains("dsh-app") && n.ends_with(".exe"))
+    })
+    .or_else(|| {
+      assets.iter().find(|a| {
+        a.get("name")
+          .and_then(|n| n.as_str())
+          .is_some_and(|n| n.ends_with(".exe"))
+      })
+    });
   let url = asset
     .and_then(|a| a.get("browser_download_url").and_then(|u| u.as_str()).map(str::to_string))
     .ok_or("发布资产中没有找到 exe 下载")?;
