@@ -444,7 +444,7 @@
         37.5%, 100% { opacity: 0.15; }
       }
       pre.log {
-        margin: 14px 0 0;
+        margin: 0 0 14px;
         padding: 10px 12px;
         background: var(--shell-layer);
         border: 1px solid var(--shell-border);
@@ -515,6 +515,7 @@
         </div>
 
         <section class="section" id="local-section">
+          <pre class="log" id="log" hidden></pre>
           <div class="row-title">本机实例 <span id="badge" class="pill">未知</span></div>
           <div class="meta-row">
             <p class="meta" id="meta">未启动</p>
@@ -540,9 +541,6 @@
               <button id="restore-toggle" class="toggle" role="switch" aria-checked="false" title="下次启动自动打开上次连接的节点"></button>
             </div>
           </div>
-
-          <p class="error" id="error"></p>
-          <pre class="log" id="log" hidden></pre>
         </section>
 
         <section class="section remote">

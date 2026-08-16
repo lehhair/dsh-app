@@ -35,7 +35,6 @@ bridge.onThemeSync((tokens) => {
 
 const badge = document.getElementById('badge')
 const meta = document.getElementById('meta')
-const error = document.getElementById('error')
 const log = document.getElementById('log')
 const startBtn = document.getElementById('start')
 const stopBtn = document.getElementById('stop')
@@ -79,10 +78,6 @@ function setBadge(state, text) {
 
 // status: 'idle' | 'starting' | 'running' | 'error'
 function setState(status, port, url) {
-  // A later state supersedes an earlier failure message: a start that fails
-  // transiently and then boots (retry / restore) must not leave stale red
-  // text under a running instance.
-  error.textContent = ''
   current = status === 'running' ? { port, url } : null
   if (status === 'running') setBadge('done', '运行中')
   else if (status === 'starting') setBadge('ongoing', '启动中')
@@ -109,18 +104,16 @@ async function refresh() {
 }
 
 startBtn.addEventListener('click', async () => {
-  error.textContent = ''
   setState('starting')
   let result
   try {
     result = await bridge.startLocal()
   } catch (e) {
-    // A real failure rejects the invoke (Err(String)); surface it instead of
-    // leaving the badge stuck on 启动中.
+    // A real failure rejects the invoke (Err(String)); the message goes into
+    // the boot log next to the dsh output.
     setState('error')
-    error.textContent = e || '启动失败'
     log.hidden = false
-    log.textContent = (await bridge.logs().catch(() => [])).join('').slice(-4000)
+    log.textContent = `${e || '启动失败'}\n${(await bridge.logs().catch(() => [])).join('').slice(-4000)}`
     return
   }
   if (result.ok) {
@@ -129,9 +122,8 @@ startBtn.addEventListener('click', async () => {
     log.textContent = (await bridge.logs()).join('').slice(-4000)
   } else {
     setState('error')
-    error.textContent = '启动失败'
     log.hidden = false
-    log.textContent = (await bridge.logs().catch(() => [])).join('').slice(-4000)
+    log.textContent = `启动失败\n${(await bridge.logs().catch(() => [])).join('').slice(-4000)}`
   }
 })
 
@@ -388,7 +380,8 @@ settingsBtn.addEventListener('click', async () => {
   try {
     await bridge.settings.open()
   } catch (e) {
-    error.textContent = e || '无法打开设置'
+    log.hidden = false
+    log.textContent = e || '无法打开设置'
   }
 })
 
