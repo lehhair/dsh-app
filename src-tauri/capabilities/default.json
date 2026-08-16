@@ -15,6 +15,7 @@
     "core:window:allow-set-size",
     "core:window:allow-set-position",
     "allow-app-info",
+    "allow-status-bar-height",
     "allow-local-start",
     "allow-local-stop",
     "allow-local-status",

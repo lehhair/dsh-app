@@ -35,6 +35,21 @@ pub fn app_info(app: AppHandle) -> AppInfo {
   }
 }
 
+/// Status-bar inset in CSS px (mobile; 0 on desktop — CSS env() handles iOS).
+#[tauri::command]
+pub fn status_bar_height(app: AppHandle) -> f64 {
+  #[cfg(target_os = "android")]
+  {
+    let plugin = app.state::<crate::app::mobile::DshNative<tauri::Wry>>();
+    return plugin.status_bar_height().unwrap_or(0.0);
+  }
+  #[cfg(not(target_os = "android"))]
+  {
+    let _ = &app;
+    0.0
+  }
+}
+
 // ---- embedded local instance ----
 
 #[tauri::command]
@@ -200,17 +215,26 @@ pub async fn remote_health(app: AppHandle, id: String) -> Result<serde_json::Val
 
 #[tauri::command]
 pub async fn settings_open(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
-  let win_label = app_origin_gate(&app, &webview)?;
   #[cfg(desktop)]
-  windows::open_settings(&app, &win_label)?;
+  {
+    let win_label = app_origin_gate(&app, &webview)?;
+    windows::open_settings(&app, &win_label)?;
+  }
+  #[cfg(not(desktop))]
+  {
+    let _ = (&app, &webview);
+  }
   Ok(serde_json::json!({ "ok": true }))
 }
 
 #[tauri::command]
 pub fn settings_close(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
-  let win_label = app_origin_gate(&app, &webview)?;
   #[cfg(desktop)]
-  windows::close_settings(&app, &win_label);
+  {
+    let win_label = app_origin_gate(&app, &webview)?;
+    windows::close_settings(&app, &win_label);
+  }
+  let _ = (&app, &webview);
   Ok(serde_json::json!({ "ok": true }))
 }
 
@@ -245,6 +269,10 @@ pub fn settings_set_login_item(app: AppHandle, enabled: bool) -> Result<serde_js
       app.autolaunch().disable()
     };
     result.map_err(|e| e.to_string())?;
+  }
+  #[cfg(not(desktop))]
+  {
+    let _ = (&app, enabled);
   }
   Ok(serde_json::json!({ "ok": true }))
 }

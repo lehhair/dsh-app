@@ -402,6 +402,13 @@ bridge.appInfo().then((info) => {
     // Mobile: no embedded local instance, no settings dialog, no title bar.
     document.getElementById('local-section')?.remove()
     document.getElementById('titlebar')?.remove()
+    // WebView < 140 reports wrong env(safe-area-inset-*) under edge-to-edge;
+    // read the real inset natively.
+    bridge.statusBarHeight().then((height) => {
+      if (height && height > 0) {
+        document.documentElement.style.setProperty('--safe-area-inset-top', `${height}px`)
+      }
+    }).catch(() => {})
   }
 }).catch(() => {})
 

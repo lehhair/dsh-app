@@ -120,7 +120,27 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
     }
   }
 
+  // Mobile only: WebView < 140 reports wrong env(safe-area-inset-*) under
+  // edge-to-edge, so pad the dsh page below the real status-bar inset
+  // (read natively). Same mechanics as the Capacitor fix: body padding inside
+  // a border-box keeps the fixed-height SPA inside the viewport.
+  function applySafeArea() {
+    if (!/Android/i.test(navigator.userAgent)) return;
+    try {
+      window.__TAURI_INTERNALS__.invoke('status_bar_height').then((height) => {
+        if (height && height > 0 && !document.getElementById('dsh-app-safe-area')) {
+          const style = document.createElement('style');
+          style.id = 'dsh-app-safe-area';
+          style.textContent =
+            'body{padding-top:' + height + 'px;box-sizing:border-box}#root{height:100%}';
+          document.head.appendChild(style);
+        }
+      }).catch(() => {});
+    } catch (_e) {}
+  }
+
   function init() {
+    applySafeArea();
     const observer = new MutationObserver(publish);
     for (const target of [document.documentElement, document.body]) {
       observer.observe(target, {

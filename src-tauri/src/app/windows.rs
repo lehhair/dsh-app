@@ -18,10 +18,9 @@ use crate::app::store::{SavedBounds, Store};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use tauri::{
-  AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewBuilder,
-  WebviewUrl, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, Manager, Webview, WebviewUrl, WebviewWindowBuilder};
+#[cfg(desktop)]
+use tauri::{LogicalPosition, LogicalSize, WebviewBuilder};
 
 pub const TITLEBAR_HEIGHT: f64 = 40.0;
 
@@ -67,11 +66,15 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
   let saved = app.state::<Store>().win_state(slot);
   let bounds = validate_bounds(app, saved);
 
-  let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+  let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
     .title("DeepSeek Harness")
     .resizable(true)
-    .decorations(false)
     .min_inner_size(800.0, 560.0)
+    // The node-view init script (back button + theme sampler) also covers the
+    // main webview on mobile, where dsh loads in this very webview. It is
+    // inert on the launcher page (isDshPage gate) and on desktop node views
+    // get their own copy via view_for.
+    .initialization_script(inject::NODE_VIEW_SCRIPT)
     .on_page_load({
       let win_label = label.clone();
       move |webview, payload| {
@@ -93,18 +96,31 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
         }
       }
     });
+  #[cfg(desktop)]
+  let mut builder = builder.decorations(false);
+  #[cfg(not(desktop))]
+  let mut builder = builder;
   match &bounds {
     Some(b) => {
       builder = builder.inner_size(b.width as f64, b.height as f64).position(b.x as f64, b.y as f64);
     }
     None => {
-      builder = builder.inner_size(1440.0, 900.0).center();
+      #[cfg(desktop)]
+      {
+        builder = builder.inner_size(1440.0, 900.0).center();
+      }
+      #[cfg(not(desktop))]
+      {
+        builder = builder.inner_size(1440.0, 900.0);
+      }
     }
   }
   let window = builder.build().map_err(|e| e.to_string())?;
+  #[cfg(desktop)]
   if bounds.as_ref().map(|b| b.maximized).unwrap_or(false) {
     let _ = window.maximize();
   }
+  let _ = &window;
 
   let windows = app.state::<Windows>();
   windows.states.lock().unwrap().insert(
@@ -149,17 +165,17 @@ fn validate_bounds(app: &AppHandle, saved: Option<SavedBounds>) -> Option<SavedB
 
 pub fn relayout(window: &tauri::Window) {
   let app = window.app_handle();
-  let Ok(inner) = window.inner_size() else { return };
-  let scale = window.scale_factor().unwrap_or(1.0);
-  let logical = inner.to_logical::<f64>(scale);
-  let width = logical.width;
-  let height = (logical.height - TITLEBAR_HEIGHT).max(0.0);
-  let rect = tauri::Rect {
-    position: LogicalPosition::new(0.0, TITLEBAR_HEIGHT).into(),
-    size: LogicalSize::new(width, height).into(),
-  };
   #[cfg(desktop)]
   {
+    let Ok(inner) = window.inner_size() else { return };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let logical = inner.to_logical::<f64>(scale);
+    let width = logical.width;
+    let height = (logical.height - TITLEBAR_HEIGHT).max(0.0);
+    let rect = tauri::Rect {
+      position: LogicalPosition::new(0.0, TITLEBAR_HEIGHT).into(),
+      size: LogicalSize::new(width, height).into(),
+    };
     let windows = app.state::<Windows>();
     let states = windows.states.lock().unwrap();
     if let Some(meta) = states.get(window.label()) {
@@ -503,7 +519,7 @@ pub fn reload_active(app: &AppHandle, win_label: &str) {
 // ================= mobile (navigate-the-main-webview model) =================
 
 #[cfg(not(desktop))]
-async fn connect_into_window(
+pub async fn connect_into_window(
   app: &AppHandle,
   win_label: &str,
   id: &str,
@@ -547,6 +563,13 @@ fn set_mobile_cookie(app: &AppHandle, origin: &str, cookie: &cookie::Cookie<'sta
 }
 
 #[cfg(not(desktop))]
+pub fn reload_active(app: &AppHandle, win_label: &str) {
+  if let Some(window) = app.get_webview_window(win_label) {
+    let _ = window.reload();
+  }
+}
+
+#[cfg(not(desktop))]
 pub fn back_to_launcher(app: &AppHandle, win_label: &str) {
   let launcher_url = app
     .state::<Windows>()
@@ -555,7 +578,7 @@ pub fn back_to_launcher(app: &AppHandle, win_label: &str) {
     .unwrap()
     .get(win_label)
     .map(|m| m.launcher_url.clone());
-  if let Some(Some(launcher)) = launcher_url {
+  if let Some(launcher) = launcher_url {
     if let Ok(parsed) = url::Url::parse(&launcher) {
       if let Some(window) = app.get_webview_window(win_label) {
         let _ = window.navigate(parsed);

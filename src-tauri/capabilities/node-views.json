@@ -9,6 +9,7 @@
   },
   "permissions": [
     "allow-shell-back",
-    "allow-theme-changed"
+    "allow-theme-changed",
+    "allow-status-bar-height"
   ]
 }

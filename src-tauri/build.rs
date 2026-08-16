@@ -4,6 +4,7 @@ fn main() {
   // webviews, which must pass the ACL, unlike local app pages).
   let manifest = tauri_build::AppManifest::new().commands(&[
     "app_info",
+    "status_bar_height",
     "local_start",
     "local_stop",
     "local_status",

@@ -17,9 +17,6 @@ use store::Store;
 use tauri::Manager;
 use windows::Windows;
 
-#[cfg(target_os = "android")]
-tauri::android_binding!(com.dshapp.app, DshNativePlugin);
-
 pub fn run() {
   let builder = tauri::Builder::default()
     .manage(Windows::default())
@@ -34,7 +31,7 @@ pub fn run() {
   #[cfg(mobile)]
   let builder = builder.plugin(
     tauri::plugin::Builder::new("dsh-native")
-      .setup(|app, api| {
+      .setup(|app: &tauri::AppHandle, api: tauri::plugin::PluginApi<tauri::Wry, ()>| {
         #[cfg(target_os = "android")]
         {
           let handle = api.register_android_plugin("com.dshapp.app", "DshNativePlugin")?;
@@ -95,6 +92,7 @@ pub fn run() {
         window.open_devtools();
       }
 
+      #[cfg(desktop)]
       run_startup_flows(app.handle());
       Ok(())
     })
@@ -125,11 +123,11 @@ pub fn run() {
 }
 
 /// Launch behavior: `DSH_AUTOSTART=1` (external autostart), else the shell's
-/// autoStartLocal / restoreLastNode settings.
+/// autoStartLocal / restoreLastNode settings. Desktop only — mobile has no
+/// embedded instance and no auto-launch.
+#[cfg(desktop)]
 fn run_startup_flows(app: &tauri::AppHandle) {
-  #[cfg(desktop)]
-  {
-    if std::env::var("DSH_AUTOSTART").as_deref() == Ok("1") {
+  if std::env::var("DSH_AUTOSTART").as_deref() == Ok("1") {
       let app = app.clone();
       tauri::async_runtime::spawn(async move {
         if let Ok(url) = std::env::var("DSH_REMOTE_URL") {
@@ -195,7 +193,6 @@ fn run_startup_flows(app: &tauri::AppHandle) {
       }
     }
   }
-}
 
 /// Show the local view immediately (dark loading ground), boot dsh, connect.
 #[cfg(desktop)]

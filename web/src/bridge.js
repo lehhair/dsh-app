@@ -12,6 +12,8 @@ async function on(channel, callback) {
 export const bridge = {
   // platform info from Rust (mobile hides the desktop-only chrome)
   appInfo: () => invoke('app_info'),
+  // status-bar inset in CSS px (mobile)
+  statusBarHeight: () => invoke('status_bar_height'),
 
   // embedded local instance
   startLocal: () => invoke('local_start'),
