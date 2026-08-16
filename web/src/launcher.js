@@ -163,8 +163,12 @@ function makeBtn(text, cls, fn) {
 
 async function connectRemoteById(id) {
   remoteError.textContent = ''
-  const r = await bridge.remote.connect(id)
-  if (!r.ok) remoteError.textContent = r.error || '连接失败'
+  try {
+    const r = await bridge.remote.connect(id)
+    if (r && !r.ok) remoteError.textContent = r.error || '连接失败'
+  } catch (e) {
+    remoteError.textContent = e || '连接失败'
+  }
 }
 
 const remoteSearch = document.getElementById('remote-search')
@@ -364,7 +368,11 @@ rfSave.addEventListener('click', async () => {
 
 // settings opens the settings dialog (desktop overlay)
 settingsBtn.addEventListener('click', async () => {
-  await bridge.settings.open()
+  try {
+    await bridge.settings.open()
+  } catch (e) {
+    error.textContent = e || '无法打开设置'
+  }
 })
 
 // ---- custom title bar window controls (decorations: false) ----

@@ -155,9 +155,13 @@ async function renderInstances() {
     connect.textContent = '连接'
     connect.addEventListener('click', async () => {
       dlgError.textContent = ''
-      const r = await bridge.remote.connect(inst.id)
-      if (r.ok) await bridge.settings.close()
-      else dlgError.textContent = r.error || '连接失败'
+      try {
+        const r = await bridge.remote.connect(inst.id)
+        if (r && r.ok) await bridge.settings.close()
+        else dlgError.textContent = (r && r.error) || '连接失败'
+      } catch (e) {
+        dlgError.textContent = e || '连接失败'
+      }
     })
     row.append(dot, meta, connect)
     instancesEl.appendChild(row)

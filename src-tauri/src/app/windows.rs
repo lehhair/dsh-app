@@ -253,7 +253,6 @@ pub fn on_window_destroyed(window: &tauri::Window) {
 /// page); remote dsh pages get rejected. Returns the window label.
 pub fn require_launcher(app: &AppHandle, webview: &Webview) -> Result<String, String> {
   let win_label = webview.window().label().to_string();
-  let Ok(url) = webview.url() else { return Err("窗口不可用".into()) };
   let windows = app.state::<Windows>();
   let launcher = windows
     .states
@@ -261,6 +260,15 @@ pub fn require_launcher(app: &AppHandle, webview: &Webview) -> Result<String, St
     .unwrap()
     .get(&win_label)
     .map(|m| m.launcher_url.clone());
+  // Fallback when `url()` is temporarily unavailable (e.g. mid-navigation):
+  // a webview whose label equals its window label can only be the shell page
+  // (the launcher or the settings overlay) — both live on the app origin.
+  let Ok(url) = webview.url() else {
+    if webview.label() == win_label {
+      return Ok(win_label);
+    }
+    return Err("窗口不可用".into());
+  };
   if let Some(launcher) = launcher {
     if same_origin(url.as_str(), &launcher) {
       return Ok(win_label);
