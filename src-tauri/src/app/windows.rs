@@ -204,14 +204,16 @@ fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> 
 /// re-raise API). Runs in the background after each node view is created, so
 /// opening settings over a dsh page stays instant.
 fn re_raise_settings(app: &AppHandle, win_label: &str) {
-  {
+  let old = {
     let windows = app.state::<Windows>();
     let states = windows.states.lock().unwrap();
-    if let Some(meta) = states.get(win_label) {
-      if let Some(old) = meta.settings_view.lock().unwrap().take() {
-        let _ = old.close();
-      }
-    }
+    states
+      .get(win_label)
+      .and_then(|meta| meta.settings_view.lock().unwrap().take())
+  };
+  // Close outside the locks — it can round-trip to the main thread.
+  if let Some(old) = old {
+    let _ = old.close();
   }
   let _ = ensure_settings_view(app, win_label);
 }
@@ -461,16 +463,17 @@ pub async fn connect_into_window(
 
 #[cfg(desktop)]
 fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Webview, String> {
-
-  let windows = app.state::<Windows>();
-  let states = windows.states.lock().unwrap();
-  let Some(meta) = states.get(win_label) else {
-
-    return Err("窗口不可用".into());
-  };
-  let mut views = meta.views.lock().unwrap();
-  if let Some(view) = views.get(id) {
-    return Ok(view.clone());
+  // Never hold the states/views locks across add_child's main-thread round
+  // trip — the main thread can need them (resize relayout) and would deadlock
+  // against this worker while it waits for the round trip.
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    let meta = states.get(win_label).ok_or("窗口不可用")?;
+    let views = meta.views.lock().unwrap();
+    if let Some(view) = views.get(id) {
+      return Ok(view.clone());
+    }
   }
   let window = app.get_window(win_label).ok_or("窗口不可用")?;
   let label = format!("{win_label}-view-{id}");
@@ -486,10 +489,18 @@ fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Web
     )
     .map_err(|e| e.to_string())?;
   let _ = view.hide();
-  views.insert(id.to_string(), view.clone());
-  // The new node view sits above the (older) settings overlay — mark it and
-  // re-raise the settings in the background so opening it stays instant.
-  meta.settings_below_node.store(true, std::sync::atomic::Ordering::SeqCst);
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    let Some(meta) = states.get(win_label) else {
+      return Err("窗口不可用".into());
+    };
+    let mut views = meta.views.lock().unwrap();
+    views.insert(id.to_string(), view.clone());
+    // The new node view sits above the (older) settings overlay — mark it and
+    // re-raise the settings in the background so opening it stays instant.
+    meta.settings_below_node.store(true, std::sync::atomic::Ordering::SeqCst);
+  }
   let app = app.clone();
   let win_label = win_label.to_string();
   tauri::async_runtime::spawn(async move {
@@ -500,17 +511,25 @@ fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Web
 
 #[cfg(desktop)]
 fn show_view(app: &AppHandle, win_label: &str, id: &str) {
+  // Collect the views first, then show/hide without holding the locks (the
+  // calls can round-trip to the main thread).
+  let views: Vec<(String, Webview)> = {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    let Some(meta) = states.get(win_label) else { return };
+    let views = meta.views.lock().unwrap();
+    views.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+  };
+  for (key, view) in views {
+    if key == id {
+      let _ = view.show();
+    } else {
+      let _ = view.hide();
+    }
+  }
   let windows = app.state::<Windows>();
   let states = windows.states.lock().unwrap();
   if let Some(meta) = states.get(win_label) {
-    let views = meta.views.lock().unwrap();
-    for (key, view) in views.iter() {
-      if key == id {
-        let _ = view.show();
-      } else {
-        let _ = view.hide();
-      }
-    }
     *meta.active.lock().unwrap() = Some(id.to_string());
   }
 }
@@ -526,16 +545,26 @@ pub fn show_local_view(app: &AppHandle, win_label: &str) {
 
 #[cfg(desktop)]
 pub fn back_to_launcher(app: &AppHandle, win_label: &str) {
-  {
+  // Collect then hide outside the locks (hide can round-trip to the main
+  // thread, which must not wait on a lock we hold).
+  let views: Vec<Webview> = {
     let windows = app.state::<Windows>();
     let states = windows.states.lock().unwrap();
-    if let Some(meta) = states.get(win_label) {
-      let views = meta.views.lock().unwrap();
-      for view in views.values() {
-        let _ = view.hide();
-      }
-      *meta.active.lock().unwrap() = None;
-    }
+    let Some(meta) = states.get(win_label) else {
+      let _ = app.emit_to(win_label, "shell:backed", ());
+      let _ = app.emit_to(win_label, "connection:changed", serde_json::json!({ "name": "DeepSeek Harness" }));
+      return;
+    };
+    let views = meta.views.lock().unwrap();
+    views.values().cloned().collect()
+  };
+  for view in views {
+    let _ = view.hide();
+  }
+  let windows = app.state::<Windows>();
+  let states = windows.states.lock().unwrap();
+  if let Some(meta) = states.get(win_label) {
+    *meta.active.lock().unwrap() = None;
   }
   let _ = app.emit_to(win_label, "shell:backed", ());
   let _ = app.emit_to(win_label, "connection:changed", serde_json::json!({ "name": "DeepSeek Harness" }));
@@ -558,14 +587,16 @@ pub fn open_settings(app: &AppHandle, win_label: &str) -> Result<(), String> {
   if stale || !settings_ready(app, win_label) {
     re_raise_settings(app, win_label);
   }
-  let windows = app.state::<Windows>();
-  let states = windows.states.lock().unwrap();
-  if let Some(meta) = states.get(win_label) {
-    if let Some(view) = meta.settings_view.lock().unwrap().as_ref() {
-      let _ = view.show();
-    }
+  let show: Option<Webview> = {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    states
+      .get(win_label)
+      .and_then(|meta| meta.settings_view.lock().unwrap().as_ref().cloned())
+  };
+  if let Some(view) = show {
+    let _ = view.show();
   }
-  drop(states);
   // The cached dialog read its state once at pre-warm — ask it to re-read
   // current connection + local instance whenever it becomes visible.
   let _ = app.emit_to(format!("{win_label}-settings"), "settings:refresh", ());
@@ -583,12 +614,15 @@ fn settings_ready(app: &AppHandle, win_label: &str) -> bool {
 
 #[cfg(desktop)]
 pub fn close_settings(app: &AppHandle, win_label: &str) {
-  let windows = app.state::<Windows>();
-  let states = windows.states.lock().unwrap();
-  if let Some(meta) = states.get(win_label) {
-    if let Some(view) = meta.settings_view.lock().unwrap().as_ref() {
-      let _ = view.hide();
-    }
+  let hide: Option<Webview> = {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    states
+      .get(win_label)
+      .and_then(|meta| meta.settings_view.lock().unwrap().as_ref().cloned())
+  };
+  if let Some(view) = hide {
+    let _ = view.hide();
   }
 }
 
