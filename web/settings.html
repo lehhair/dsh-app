@@ -244,6 +244,7 @@
       /* dsh ongoing chase: fixed deepseek-450 blue, 2px cells on the 10px grid,
          phased inline by per-cell negative animation-delay (see renderLocal). */
       .dot.chase { width: 10px; height: 10px; color: rgb(86, 134, 254); }
+      .dot.chase svg { width: 10px; height: 10px; display: block; }
       .dot.chase::before, .dot.chase::after { display: none; }
       .dot.chase svg rect { fill: currentColor; opacity: 0.15; animation: dsh-state-dot-chase 1s infinite; }
       @keyframes dsh-state-dot-chase {
@@ -312,7 +313,6 @@
             </div>
             <button id="local-toggle" class="btn primary">启动</button>
             <button id="local-enter" class="btn outline" disabled>进入</button>
-          </div>
           </div>
         </div>
 
