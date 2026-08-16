@@ -164,7 +164,9 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Create (hidden) the settings overlay child webview for a window, cached
-/// for instant show/hide afterwards.
+/// for instant show/hide afterwards. Desktop only — mobile has no child
+/// webviews (the dsh page loads in the main webview).
+#[cfg(desktop)]
 fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> {
   {
     let windows = app.state::<Windows>();
@@ -208,7 +210,8 @@ fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> 
 /// Re-create the settings overlay so it sits above any node webview created
 /// after it (child-webview z-order follows creation order; there is no
 /// re-raise API). Runs in the background after each node view is created, so
-/// opening settings over a dsh page stays instant.
+/// opening settings over a dsh page stays instant. Desktop only.
+#[cfg(desktop)]
 fn re_raise_settings(app: &AppHandle, win_label: &str) {
   let old = {
     let windows = app.state::<Windows>();

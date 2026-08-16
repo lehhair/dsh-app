@@ -462,6 +462,8 @@ bridge.appInfo().then((info) => {
     // Mobile: no embedded local instance, no settings dialog, no title bar.
     document.getElementById('local-section')?.remove()
     document.getElementById('titlebar')?.remove()
+    const sub = document.querySelector('.hero .sub')
+    if (sub) sub.textContent = '移动客户端 · 连接远程 dsh 节点（经网关）'
     // WebView < 140 reports wrong env(safe-area-inset-*) under edge-to-edge;
     // read the real inset natively.
     bridge.statusBarHeight().then((height) => {

@@ -8,3 +8,7 @@ src-tauri/target/
 
 web/dist/
 
+
+# signing keys (never commit)
+*.keystore
+

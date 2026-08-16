@@ -42,6 +42,26 @@ npm run build:external
 - 启动器自更新：Windows 用 .cmd 换 exe；macOS/Linux 用 `sh` 等进程退出后
   `mv` + 重启（未在真机验证，发布前需各平台实测）。
 
+## Android
+
+- 启动页即 PC 版去掉本机实例/标题栏，只留远程节点；状态栏沉浸
+  （edge-to-edge）：页面背景延伸到状态栏下方（融合），内容按原生状态栏高度
+  留白（`status_bar_height`，WebView<140 的 env() 不可靠），状态栏图标深浅
+  色跟随日/夜主题（uiMode 轮询——该设备上 uiMode 回调会静默）。
+- 远程登录：`auth.rs` 网关登录拿 cookie → Kotlin `DshNativePlugin.setCookie`
+  写全局 WebView CookieManager（wry 的 set_cookie 在安卓是 no-op）。
+- 手工构建（本机无 Developer Mode，CLI 的符号链接步骤会失败）：
+  ```powershell
+  $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = '<ndk>\toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android24-clang.cmd'
+  cargo build --release --target aarch64-linux-android   # 必须 release（或开 devUrl 的 dev 流程）
+  # 复制 target/aarch64-linux-android/release/libdsh_app_lib.so → gen/android/app/src/main/jniLibs/arm64-v8a/
+  cd gen/android; .\gradlew.bat :app:assembleArm64Release -x rustBuildUniversalRelease -x rustBuildArm64Release
+  # release 未签名，用 apksigner 签名后 adb install -r
+  ```
+  注意：tauri 必须启用 **`custom-protocol` feature**（见 Cargo.toml）——否则移动端
+  `dev` cfg 恒为 true，前端协议走"开发服务器代理"（`proxy_dev_request`），没有 devUrl
+  时每个资源请求都 500（白屏）。桌面端不受影响（代理路径仅 mobile 编译）。
+
 ## 架构
 
 ```

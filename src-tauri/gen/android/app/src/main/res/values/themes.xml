@@ -1,6 +1,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.dsh_app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <!-- Match the launcher page ground (light) so the cold start doesn't
+             flash before the WebView paints; the status bar is transparent
+             (edge-to-edge) and shows this same color. -->
+        <item name="android:windowBackground">@color/window_background</item>
     </style>
 </resources>
