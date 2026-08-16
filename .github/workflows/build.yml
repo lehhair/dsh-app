@@ -139,7 +139,7 @@ jobs:
           export NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
           npx tauri android build --apk --target aarch64
 
-      - name: Sign APK (fallback: unsigned)
+      - name: Sign APK (fallback unsigned)
         shell: bash
         run: |
           mkdir -p release
