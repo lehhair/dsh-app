@@ -135,19 +135,34 @@ const EMBEDDED_OVERLAY: &str = include_str!(concat!(
   "/../embedded-overlay.yml"
 ));
 
-/// Write the current exe's overlay into the user-data dir (creating it if
-/// needed). Returns the path to pass as `--patch`. Rewrites only when the
-/// content changed (an update shipped a new overlay).
+/// Materialize the overlay into the user-data dir and return the path to
+/// pass as `--patch`. The file is USER-EDITABLE: an update refreshes it ONLY
+/// when the file still matches the previously materialized default (i.e. the
+/// user has not touched it). A `.overlay-default` snapshot records what this
+/// exe last wrote, so a customized file survives launcher updates untouched.
 fn materialize_overlay(user: &Path) -> PathBuf {
   let dir = user.join("overlay");
   let path = dir.join("embedded-overlay.yml");
-  let needs_write = match std::fs::read_to_string(&path) {
-    Ok(existing) => existing != EMBEDDED_OVERLAY,
-    Err(_) => true,
-  };
-  if needs_write {
-    let _ = std::fs::create_dir_all(&dir);
+  let snapshot = dir.join(".overlay-default");
+  let _ = std::fs::create_dir_all(&dir);
+
+  let existing = std::fs::read_to_string(&path).unwrap_or_default();
+  let last_default = std::fs::read_to_string(&snapshot).unwrap_or_default();
+
+  if existing.is_empty() {
+    // Never materialized (or user deleted it) — write the current default.
     let _ = std::fs::write(&path, EMBEDDED_OVERLAY);
+    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
+  } else if existing == EMBEDDED_OVERLAY {
+    // Already the current default — nothing to refresh, align the snapshot.
+    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
+  } else if existing == last_default {
+    // Untouched previous default; an update changed it — adopt the new one.
+    let _ = std::fs::write(&path, EMBEDDED_OVERLAY);
+    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
+  } else {
+    // User-customized file — keep it, just record the new default baseline.
+    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
   }
   path
 }
@@ -191,6 +206,7 @@ pub fn resolve_diagnostics(app: &AppHandle) -> String {
   let paths = Paths::resolve(app);
   lines.push(format!("resolved dsh_bin: {} -> {}", paths.dsh_bin.display(), paths.dsh_bin.exists()));
   lines.push(format!("resolved dsh_pkg: {} -> {}", paths.dsh_pkg.display(), paths.dsh_pkg.exists()));
+  lines.push(format!("overlay: {} -> {}", paths.overlay.display(), paths.overlay.exists()));
   lines.push(format!("bundled: {}", paths.bundled));
   lines.join("\n")
 }
