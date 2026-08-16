@@ -54,9 +54,65 @@ async fn run_npm(paths: &Paths, args: &[&str]) -> (i32, String) {
   }
 }
 
-/// Latest published version on the registry, or None on failure.
+/// Run the system npm (`npm` on PATH) — used by the external flavor, which
+/// has no bundled node/npm. Windows npm is a .cmd shim, so wrap it in
+/// `cmd.exe /C` like every other batch spawn, with CREATE_NO_WINDOW.
+async fn run_system_npm(args: &[&str]) -> (i32, String) {
+  #[cfg(windows)]
+  {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = tokio::process::Command::new("cmd.exe");
+    command.arg("/C").arg("npm.cmd").args(args);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::piped())
+      .stderr(std::process::Stdio::piped());
+    match command.spawn() {
+      Ok(child) => match child.wait_with_output().await {
+        Ok(output) => {
+          let code = output.status.code().unwrap_or(-1);
+          let text = String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr);
+          (code, text)
+        }
+        Err(e) => (-1, format!("{e}")),
+      },
+      Err(e) => (-1, format!("无法启动 npm：{e}")),
+    }
+  }
+  #[cfg(not(windows))]
+  {
+    let mut command = tokio::process::Command::new("npm");
+    command.args(args);
+    command
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::piped())
+      .stderr(std::process::Stdio::piped());
+    match command.spawn() {
+      Ok(child) => match child.wait_with_output().await {
+        Ok(output) => {
+          let code = output.status.code().unwrap_or(-1);
+          let text = String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr);
+          (code, text)
+        }
+        Err(e) => (-1, format!("{e}")),
+      },
+      Err(e) => (-1, format!("无法启动 npm：{e}")),
+    }
+  }
+}
+
+/// Latest published version on the registry, or None on failure. Uses the
+/// bundled npm when this install ships node+npm, the system npm otherwise
+/// (external flavor — the user's own npm owns the global dsh).
 pub async fn check_update(paths: &Paths) -> Option<UpdateInfo> {
-  let (code, out) = run_npm(paths, &["view", "@deepseek-ai/dsh", "version"]).await;
+  let (code, out) = if paths.npm_cli.exists() {
+    run_npm(paths, &["view", "@deepseek-ai/dsh", "version"]).await
+  } else {
+    run_system_npm(&["view", "@deepseek-ai/dsh", "version"]).await
+  };
   // npm may print warnings (e.g. unsupported Node version) AFTER the version
   // token — take the FIRST token that starts with a digit, not the last.
   let latest = out
@@ -75,9 +131,12 @@ pub async fn check_update(paths: &Paths) -> Option<UpdateInfo> {
   })
 }
 
-/// Update the embedded dsh to `target` (exact version). Stops the local
-/// instance first (files are locked while running), installs, then restarts
-/// it if it was running. Progress lines stream to every shell window.
+/// Update dsh to `target` (exact version). Bundled installs (ships
+/// node+npm) install into the launcher-managed runtime via the bundled npm
+/// CLI; the external flavor has no bundled tooling, so the user's own npm
+/// updates their global dsh (`npm i -g`). Either way: stop the local
+/// instance first (files are locked while running), install, then restart it
+/// if it was running. Progress lines stream to every shell window.
 pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, String> {
   let paths = Paths::resolve(app);
   let service = app.state::<DshService>();
@@ -91,11 +150,27 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
 
   notify(&format!("正在安装 @deepseek-ai/dsh@{target} …"));
 
-  let mut command = tokio::process::Command::new(&paths.node_exe);
+  let mut command = if paths.npm_cli.exists() {
+    // Bundled flavor: the shipped node drives the bundled npm CLI into the
+    // launcher-owned runtime dir.
+    let mut cmd = tokio::process::Command::new(&paths.node_exe);
+    cmd
+      .arg(&paths.npm_cli)
+      .args(["install", &format!("@deepseek-ai/dsh@{target}"), "--no-audit", "--no-fund", "--loglevel", "error"])
+      .current_dir(&paths.dsh_runtime);
+    cmd
+  } else {
+    // External flavor: the user's own npm owns the global dsh — update it in
+    // place. npm.cmd needs cmd.exe /C on Windows (no npm.exe exists); the
+    // outer Windows block below adds CREATE_NO_WINDOW.
+    let mut cmd = tokio::process::Command::new(if cfg!(windows) { "cmd.exe" } else { "npm" });
+    if cfg!(windows) {
+      cmd.arg("/C").arg("npm.cmd");
+    }
+    cmd.args(["install", "-g", &format!("@deepseek-ai/dsh@{target}"), "--no-audit", "--no-fund", "--loglevel", "error"]);
+    cmd
+  };
   command
-    .arg(&paths.npm_cli)
-    .args(["install", &format!("@deepseek-ai/dsh@{target}"), "--no-audit", "--no-fund", "--loglevel", "error"])
-    .current_dir(&paths.dsh_runtime)
     .stdin(std::process::Stdio::null())
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped());

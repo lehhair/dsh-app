@@ -590,11 +590,11 @@ bridge.appInfo().then((info) => {
     // Desktop has no safe-area inset — reveal immediately.
     document.documentElement.classList.remove('pad-pending')
     if (!info.bundled) {
-      // External flavor: the dsh runtime is the user's own npm install — the
-      // in-app dsh updater would mutate something the user owns, so hide it.
+      // External flavor: the dsh runtime is the user's own npm install. The
+      // in-app updater mutates the user's global dsh (npm i -g) rather than a
+      // launcher-owned runtime — keep the buttons, they update the global
+      // install the user asked us to manage.
       external = true
-      document.getElementById('check-update')?.remove()
-      document.getElementById('do-update')?.remove()
       // "内嵌" is the bundled flavor's story; the external launcher boots
       // the user's own global dsh.
       startBtn.textContent = '启动 dsh'
