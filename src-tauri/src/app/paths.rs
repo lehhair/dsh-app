@@ -165,13 +165,47 @@ fn resolve_runtime(res: &Path, proj: &Path, user: &Path, managed_only: bool) -> 
 
 /// The user's global npm node_modules dir (`npm root -g`), used by the
 /// external flavor to find a globally installed `@deepseek-ai/dsh`.
+///
+/// Pure path probing comes first — zero processes spawned, so this never
+/// flashes a console, never depends on the working directory or a spawn
+/// succeeding, and never adds startup latency. `npm root -g` remains as a
+/// fallback for non-default prefixes (custom `npm config prefix`).
 fn global_npm_root() -> Option<PathBuf> {
-  // Windows: npm ships as a .cmd batch shim (there is no npm.exe) which
-  // CreateProcess cannot run directly — `cmd.exe /C` wrapping is what
-  // OpenCodeUI does for its .cmd/.bat binaries, and it is the only form
-  // that resolves the global root reliably from any working directory.
-  // CREATE_NO_WINDOW keeps the console hidden (a bare spawn flashes a
-  // terminal window).
+  let probe = |root: &Path| root.join("@deepseek-ai/dsh/lib/bin.js").exists();
+
+  // 1. npm's default global root: %APPDATA%\npm\node_modules on Windows,
+  // /usr/local/lib/node_modules on Unix. Zero processes spawned — no console
+  // flash, no working-directory dependence, no startup latency.
+  #[cfg(windows)]
+  if let Some(appdata) = std::env::var_os("APPDATA") {
+    let default = PathBuf::from(appdata).join("npm").join("node_modules");
+    if probe(&default) {
+      return Some(default);
+    }
+  }
+  #[cfg(not(windows))]
+  {
+    for default in [
+      PathBuf::from("/usr/local/lib/node_modules"),
+      PathBuf::from("/usr/lib/node_modules"),
+    ] {
+      if probe(&default) {
+        return Some(default);
+      }
+    }
+  }
+
+  // 2. `npm root -g` output, for non-default prefixes. Never fatal — a
+  // failure here returns None, it does not hide anything.
+  npm_root_command().filter(|root| probe(root))
+}
+
+/// Run `npm root -g` and return the first line. Windows npm is a .cmd batch
+/// shim that CreateProcess cannot run directly — wrap it in `cmd.exe /C`
+/// (OpenCodeUI's pattern for .cmd/.bat binaries) with CREATE_NO_WINDOW so no
+/// console flashes. Any failure returns None (callers fall back to the
+/// default-root probes).
+fn npm_root_command() -> Option<PathBuf> {
   #[cfg(windows)]
   {
     use std::os::windows::process::CommandExt;
@@ -186,13 +220,11 @@ fn global_npm_root() -> Option<PathBuf> {
       .ok()?;
     let text = String::from_utf8(output.stdout).ok()?;
     let root = text.trim();
-    if !root.is_empty() {
-      return Some(PathBuf::from(root));
+    if root.is_empty() {
+      None
+    } else {
+      Some(PathBuf::from(root))
     }
-    // npm default global root when the command produced nothing.
-    std::env::var_os("APPDATA")
-      .map(PathBuf::from)
-      .map(|base| base.join("npm").join("node_modules"))
   }
   #[cfg(not(windows))]
   {
