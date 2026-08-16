@@ -54,12 +54,14 @@ impl Paths {
       }
     };
 
+    // Bundled Node binary name: node.exe on Windows, node elsewhere.
+    let node_name = if cfg!(windows) { "node.exe" } else { "node" };
     let node_exe = {
-      let in_res = res.join("resources").join("node.exe");
+      let in_res = res.join("resources").join(node_name);
       if in_res.exists() {
         in_res
       } else {
-        let in_proj = proj.join("resources").join("node.exe");
+        let in_proj = proj.join("resources").join(node_name);
         if in_proj.exists() {
           in_proj
         } else {

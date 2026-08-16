@@ -147,6 +147,13 @@
       .titlebar .win-btn:hover:not(:disabled) { background: var(--shell-hover); color: var(--shell-fg); }
       .titlebar .win-btn:disabled { opacity: 0.35; }
       body.inactive .titlebar { opacity: 0.6; }
+      /* macOS: native traffic lights float at the top-left over this strip —
+         pad the web controls clear of them and drop our own window buttons
+         (the OS provides min/max/close). Windows/Linux keep the buttons. */
+      body.macos .titlebar { padding-left: 78px; }
+      body.macos .titlebar .win-btn#win-min,
+      body.macos .titlebar .win-btn#win-max,
+      body.macos .titlebar .win-btn#win-close { display: none; }
 
       /* ---- launcher content (dsh look: no card containers) ----
          Fixed head (hero + local instance) above; only the remote list

@@ -45,8 +45,11 @@ copy(join(root, 'embedded-overlay.yml'), 'embedded-overlay.yml')
 copy(join(root, '.dsh-runtime'), '.dsh-runtime')
 copy(join(root, 'node_modules', 'npm'), 'node_modules/npm')
 
-// node.exe: prefer resources/node.exe (already provisioned), else DSH_NODE.
-const nodeExe = join(root, 'resources', 'node.exe')
-if (!existsSync(nodeExe)) {
-  console.warn('[bundle:resources] resources/node.exe missing — copy a Windows Node binary there for packaging')
-}
+// The official Node binary for THIS platform (the node running this script
+// — i.e. the one npm used), named node.exe on Windows / node elsewhere.
+// Override with DSH_NODE for a specific binary. Build each platform on its
+// own OS so the bundled node and .dsh-runtime native modules match.
+const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
+const nodeSrc = process.env.DSH_NODE || process.execPath
+cpSync(nodeSrc, join(out, nodeName))
+console.log(`[bundle:resources] node ${nodeName} <- ${nodeSrc}`)

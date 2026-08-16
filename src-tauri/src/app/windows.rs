@@ -102,8 +102,14 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
         }
       }
     });
-  #[cfg(desktop)]
+  // macOS: keep the native traffic lights floating over our web titlebar
+  // (Overlay + hiddenTitle — the standard Tauri/Electron mac look); the
+  // frontend hides its own window buttons and pads for the lights. Windows
+  // and Linux stay fully frameless with the web-drawn buttons.
+  #[cfg(all(desktop, not(target_os = "macos")))]
   let mut builder = builder.decorations(false);
+  #[cfg(all(desktop, target_os = "macos"))]
+  let mut builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
   #[cfg(not(desktop))]
   let mut builder = builder;
   match &bounds {

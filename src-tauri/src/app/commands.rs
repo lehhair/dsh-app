@@ -29,6 +29,8 @@ pub struct AppInfo {
   /// fallback) — the shell can update it in place. False for the external
   /// flavor (user-provided global dsh), which hides the in-app dsh updater.
   pub bundled: bool,
+  /// Host OS: "windows" | "macos" | "linux" (frontend titlebar adaptation).
+  pub platform: String,
 }
 
 #[tauri::command]
@@ -37,6 +39,7 @@ pub fn app_info(app: AppHandle) -> AppInfo {
     desktop: cfg!(desktop),
     version: app.package_info().version.to_string(),
     bundled: Paths::resolve(&app).bundled,
+    platform: std::env::consts::OS.to_string(),
   }
 }
 

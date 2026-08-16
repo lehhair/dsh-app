@@ -28,6 +28,20 @@ npm run build:external
   不重下 dsh 运行时。未设置环境变量时该功能静默关闭。
 - 内置版的 dsh 运行时更新走应用内「检查更新」（npm 更新 resources/.dsh-runtime）。
 
+## 跨平台（Windows / macOS / Linux）
+
+- 每个平台在**各自的操作系统上构建**（`build:bundled` / `build:external` 同上），
+  `bundle.targets: "all"` 会让 Tauri 产出该平台的安装包：Windows nsis+msi、macOS
+  app+dmg、Linux deb+rpm+appimage。`bundle-resources.mjs` 会把**当前平台**的官方
+  node 二进制（`node.exe` / `node`，来自运行脚本的 node，可用 `DSH_NODE` 覆盖）和
+  `.dsh-runtime` 打进 resources/——`.dsh-runtime` 含平台相关原生模块，必须在目标
+  平台上装好。
+- 标题栏：Windows/Linux 无边框 + 网页自绘窗口按钮（右端）；macOS 保留原生红绿灯
+  （`TitleBarStyle::Overlay` + `hiddenTitle`），网页标题栏左侧留出红绿灯空间并隐藏
+  自绘按钮（前端按 `app_info.platform` 适配）。
+- 启动器自更新：Windows 用 .cmd 换 exe；macOS/Linux 用 `sh` 等进程退出后
+  `mv` + 重启（未在真机验证，发布前需各平台实测）。
+
 ## 架构
 
 ```

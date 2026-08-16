@@ -455,6 +455,9 @@ bridge.onConnectionChanged((detail) => {
 // ---- platform adaptation ----
 bridge.appInfo().then((info) => {
   document.body.classList.add(info.desktop ? 'desktop' : 'mobile')
+  // macOS: the window keeps native traffic lights (Overlay titlebar) — the
+  // CSS pads the strip and hides the custom window buttons.
+  if (info.platform === 'macos') document.body.classList.add('macos')
   if (!info.desktop) {
     // Mobile: no embedded local instance, no settings dialog, no title bar.
     document.getElementById('local-section')?.remove()
