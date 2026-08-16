@@ -48,9 +48,14 @@ jobs:
             npm run tauri -- build
           fi
           mkdir -p release/external
-          cp -r src-tauri/target/release/bundle/* release/external/ 2>/dev/null || true
-          # standalone binary (small update payload for the launcher updater)
-          cp src-tauri/target/release/dsh-app* release/external/ 2>/dev/null || true
+          # installers only — never the whole bundle dir: AppImage/deb/dmg
+          # staging leftovers (.so trees, AppRun, gschema…) would flood the
+          # release, and the 0-byte AppImage "empty" header makes GitHub
+          # reject the upload ("size must be greater than or equal to 1")
+          find src-tauri/target/release/bundle -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) -exec cp {} release/external/ \; 2>/dev/null || true
+          # standalone Windows binary (the launcher updater is Windows-only
+          # and swaps the running exe in place — keep it as a payload)
+          cp src-tauri/target/release/dsh-app.exe release/external/ 2>/dev/null || true
 
       # Bundled flavor is Windows-only: macOS/Linux users just need the
       # launcher (external flavor — their own node + global dsh). The bundled
@@ -65,8 +70,10 @@ jobs:
           # payload into the MSI; NSIS covers Windows installs.
           npm run tauri -- build --bundles nsis
           mkdir -p release/bundled
-          cp -r src-tauri/target/release/bundle/* release/bundled/ 2>/dev/null || true
-          cp src-tauri/target/release/dsh-app* release/bundled/ 2>/dev/null || true
+          # installers only — see the external step for why we never copy
+          # the whole bundle dir
+          find src-tauri/target/release/bundle -type f \( -name '*.exe' -o -name '*.msi' \) -exec cp {} release/bundled/ \; 2>/dev/null || true
+          cp src-tauri/target/release/dsh-app.exe release/bundled/ 2>/dev/null || true
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
@@ -203,6 +210,9 @@ jobs:
             esac
             cp "$f" "out/$name"
           done
+          # GitHub rejects zero-byte release assets ("size must be greater
+          # than or equal to 1") — drop any stragglers
+          find out -type f -size 0 -delete
           # the launcher updater prefers an asset containing "dsh-app" and
           # ending in .exe — point it at the bundled Windows binary
           if ls out/dsh-app-bundled-dsh-app.exe >/dev/null 2>&1; then
@@ -210,11 +220,30 @@ jobs:
           fi
           ls out
 
+      - name: Clear stale release assets
+        shell: bash
+        run: |
+          TAG="v${{ steps.ver.outputs.v }}"
+          # the rolling release re-uploads every asset each build — drop the
+          # previous run's assets (incl. older staging leftovers) so the
+          # release never accumulates dead files. 404 = no release yet, fine
+          # on the first run.
+          gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.assets[].id' 2>/dev/null | while read -r id; do
+            gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id" --silent
+          done || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.v }}
           name: dsh-app v${{ steps.ver.outputs.v }}
           generate_release_notes: true
+          # rolling release — every successful master build re-uploads the
+          # assets onto the same v<version> release; overwrite is required
+          # because the asset names already exist from the previous run
+          overwrite: true
+          update_release_body: true
           files: out/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -209,18 +209,28 @@ pub async fn check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo,
   let assets = json.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
   // Prefer the standalone app binary (named dsh-app-*) over the NSIS
   // installer (also an .exe) — the update swaps the running exe in place.
+  // Match the exact rolling-release payload name first: installer assets
+  // (…-setup.exe) also contain "dsh-app" and end in .exe, and asset order
+  // is not guaranteed, so a loose match could download a 400 MB installer.
   let asset = assets
     .iter()
     .find(|a| {
       a.get("name")
         .and_then(|n| n.as_str())
-        .is_some_and(|n| n.contains("dsh-app") && n.ends_with(".exe"))
+        .is_some_and(|n| n == "dsh-app-windows-x86_64.exe")
     })
     .or_else(|| {
       assets.iter().find(|a| {
         a.get("name")
           .and_then(|n| n.as_str())
-          .is_some_and(|n| n.ends_with(".exe"))
+          .is_some_and(|n| n.contains("dsh-app") && n.ends_with(".exe") && !n.contains("setup"))
+      })
+    })
+    .or_else(|| {
+      assets.iter().find(|a| {
+        a.get("name")
+          .and_then(|n| n.as_str())
+          .is_some_and(|n| n.ends_with(".exe") && !n.contains("setup"))
       })
     });
   let url = asset
