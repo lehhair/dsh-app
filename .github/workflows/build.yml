@@ -139,7 +139,7 @@ jobs:
           export NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
           npx tauri android build --apk --target aarch64
 
-      - name: Sign APK (fallback: per-run debug keystore)
+      - name: Sign APK
         shell: bash
         run: |
           mkdir -p release
@@ -147,16 +147,10 @@ jobs:
           if [ -z "$APK" ]; then echo "no release APK found"; exit 1; fi
           BT="$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | tail -1)"
           if $BT/apksigner verify "$APK" 2>/dev/null; then
-            # already signed by the real keystore (secrets configured)
             cp "$APK" release/dsh-app-android-arm64.apk
           else
-            # no secrets: sign with a per-run keystore so the APK is installable
-            # (updates need the same key — set ANDROID_KEY_* secrets for that)
-            "$JAVA_HOME/bin/keytool" -genkeypair -v -keystore $RUNNER_TEMP/ci.keystore -alias ci \
-              -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android \
-              -dname "CN=DSH App CI, O=DSH, C=CN" 2>/dev/null || true
-            $BT/apksigner sign --ks $RUNNER_TEMP/ci.keystore --ks-pass pass:android --key-pass pass:android \
-              --out release/dsh-app-android-arm64.apk "$APK"
+            echo "::error::APK is unsigned — the Android signing key MUST be stable across builds (Android refuses signature changes on update). Set the ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD / ANDROID_KEY_BASE64 secrets from a keystore you keep safe."
+            exit 1
           fi
 
       - name: Upload APK
