@@ -355,10 +355,13 @@ pub async fn connect_into_window(
   name: &str,
   key: Option<&str>,
 ) -> Result<(), String> {
+  let _ = key;
   if let Some(key) = key {
     let value = auth::ensure_gateway_session(url, key).await?;
+
     let cookie = auth::build_cookie(url, &value)?;
     let Some(window) = app.get_webview_window(win_label) else {
+
       return Err("窗口不可用".into());
     };
     // The window's main webview shares the profile cookie store with child
@@ -386,9 +389,13 @@ pub async fn connect_into_window(
 
 #[cfg(desktop)]
 fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Webview, String> {
+
   let windows = app.state::<Windows>();
   let states = windows.states.lock().unwrap();
-  let meta = states.get(win_label).ok_or("窗口不可用")?;
+  let meta = states.get(win_label).ok_or_else(|| {
+
+    "窗口不可用".to_string()
+  })?;
   let mut views = meta.views.lock().unwrap();
   if let Some(view) = views.get(id) {
     return Ok(view.clone());

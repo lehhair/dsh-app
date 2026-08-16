@@ -123,7 +123,9 @@ pub fn shell_back(app: AppHandle, webview: Webview) -> Result<serde_json::Value,
 }
 
 #[tauri::command]
-pub fn shell_new_window(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+pub async fn shell_new_window(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  // Async: window creation needs a main-thread round trip (same trap as
+  // settings_open) — a sync command would deadlock the event loop.
   let _ = app_origin_gate(&app, &webview)?;
   windows::create_app_window(&app)?;
   Ok(serde_json::json!({ "ok": true }))
