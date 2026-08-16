@@ -166,20 +166,49 @@ fn resolve_runtime(res: &Path, proj: &Path, user: &Path, managed_only: bool) -> 
 /// The user's global npm node_modules dir (`npm root -g`), used by the
 /// external flavor to find a globally installed `@deepseek-ai/dsh`.
 fn global_npm_root() -> Option<PathBuf> {
-  // npm is npm.cmd on Windows (there is no npm.exe) — spawn the shim.
-  let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
-  let output = std::process::Command::new(npm)
-    .args(["root", "-g"])
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null())
-    .output()
-    .ok()?;
-  let text = String::from_utf8(output.stdout).ok()?;
-  let root = text.trim();
-  if root.is_empty() {
-    None
-  } else {
-    Some(PathBuf::from(root))
+  // Windows: npm ships as a .cmd batch shim (there is no npm.exe) which
+  // CreateProcess cannot run directly — `cmd.exe /C` wrapping is what
+  // OpenCodeUI does for its .cmd/.bat binaries, and it is the only form
+  // that resolves the global root reliably from any working directory.
+  // CREATE_NO_WINDOW keeps the console hidden (a bare spawn flashes a
+  // terminal window).
+  #[cfg(windows)]
+  {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let output = std::process::Command::new("cmd.exe")
+      .args(["/C", "npm.cmd", "root", "-g"])
+      .creation_flags(CREATE_NO_WINDOW)
+      .stdin(Stdio::null())
+      .stdout(Stdio::piped())
+      .stderr(Stdio::null())
+      .output()
+      .ok()?;
+    let text = String::from_utf8(output.stdout).ok()?;
+    let root = text.trim();
+    if !root.is_empty() {
+      return Some(PathBuf::from(root));
+    }
+    // npm default global root when the command produced nothing.
+    std::env::var_os("APPDATA")
+      .map(PathBuf::from)
+      .map(|base| base.join("npm").join("node_modules"))
+  }
+  #[cfg(not(windows))]
+  {
+    let output = std::process::Command::new("npm")
+      .args(["root", "-g"])
+      .stdin(Stdio::null())
+      .stdout(Stdio::piped())
+      .stderr(Stdio::null())
+      .output()
+      .ok()?;
+    let text = String::from_utf8(output.stdout).ok()?;
+    let root = text.trim();
+    if root.is_empty() {
+      None
+    } else {
+      Some(PathBuf::from(root))
+    }
   }
 }

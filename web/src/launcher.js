@@ -588,6 +588,9 @@ bridge.appInfo().then((info) => {
       external = true
       document.getElementById('check-update')?.remove()
       document.getElementById('do-update')?.remove()
+      // "内嵌" is the bundled flavor's story; the external launcher boots
+      // the user's own global dsh.
+      startBtn.textContent = '启动 dsh'
     }
   }
 }).catch(() => {
