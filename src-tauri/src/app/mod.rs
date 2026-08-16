@@ -28,6 +28,18 @@ pub fn run() {
     None,
   ));
 
+  // Single instance: double-clicking the desktop icon (or launching again
+  // from anywhere) must NOT spawn a second process — each process would boot
+  // its own local dsh backend. The second launch is forwarded here, into the
+  // first process, which opens a peer window exactly like the title-bar
+  // 新建窗口 button (same backend, same shell).
+  #[cfg(desktop)]
+  let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    if let Err(e) = windows::create_app_window(app) {
+      log::error!("[single-instance] new window failed: {e}");
+    }
+  }));
+
   #[cfg(mobile)]
   let builder = builder.plugin(
     tauri::plugin::Builder::new("dsh-native")
@@ -213,12 +225,28 @@ fn run_startup_flows(app: &tauri::AppHandle) {
 /// call site in `setup`). Runs synchronously before any fresh start: a
 /// background sweep could race the boot's own spawn and kill the new node
 /// (it matches the same command-line marker).
+///
+/// Fast path: a `tasklist` probe (milliseconds) checks whether any node.exe
+/// is running at all — the PowerShell process sweep (cold start ~1-3 s) only
+/// runs when there is something to sweep. Clean startups never touch
+/// PowerShell, which is what makes app launch feel instant.
 #[cfg(desktop)]
 fn cleanup_stale_embedded() {
   #[cfg(windows)]
   {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let probe = std::process::Command::new("tasklist")
+      .args(["/FI", "IMAGENAME eq node.exe", "/NH"])
+      .creation_flags(CREATE_NO_WINDOW)
+      .stdin(std::process::Stdio::null())
+      .stdout(std::process::Stdio::piped())
+      .stderr(std::process::Stdio::null())
+      .output();
+    let any_node = matches!(probe, Ok(out) if String::from_utf8_lossy(&out.stdout).contains("node.exe"));
+    if !any_node {
+      return;
+    }
     // The embedded overlay marker is unique to this app's dsh spawns.
     let script = "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -like '*embedded-overlay.yml*' } | ForEach-Object { $_.ProcessId }";
     let output = std::process::Command::new("powershell")
