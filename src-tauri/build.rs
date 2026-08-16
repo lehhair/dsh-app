@@ -11,6 +11,7 @@ fn main() {
     "local_status",
     "local_logs",
     "dsh_version",
+    "dsh_diagnose",
     "dsh_check_update",
     "dsh_update",
     "dsh_install",
