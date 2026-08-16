@@ -57,35 +57,28 @@ jobs:
           # standalone binary (small update payload for the launcher updater)
           cp src-tauri/target/release/dsh-app* release/external/ 2>/dev/null || true
 
-      # The dsh runtime tree is large and has platform-specific native
-      # modules — restore the cached install BEFORE npm install (the install
-      # step then no-ops against the restored tree). Cache is saved at job
-      # end, keyed per platform + version.
+      # Bundled flavor is Windows-only: macOS/Linux users just need the
+      # launcher (external flavor — their own node + global dsh).
       - name: Cache embedded dsh runtime
+        if: matrix.platform == 'windows-latest'
         uses: actions/cache@v5
         with:
           path: .dsh-runtime
-          key: dsh-runtime-${{ matrix.platform }}-${{ env.DSH_VERSION }}
+          key: dsh-runtime-windows-latest-${{ env.DSH_VERSION }}
 
       - name: Install embedded dsh
+        if: matrix.platform == 'windows-latest'
         shell: bash
         run: npm install --prefix .dsh-runtime @deepseek-ai/dsh@$DSH_VERSION --no-audit --no-fund
 
       - name: Build bundled flavor
+        if: matrix.platform == 'windows-latest'
         shell: bash
         run: |
           node scripts/bundle-resources.mjs
-          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-            # NSIS only — WiX light stalls for 10+ minutes linking the ~400MB
-            # bundled payload into the MSI; NSIS covers Windows installs.
-            npm run tauri -- build --bundles nsis
-          elif [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
-            # AppImage cannot package the ~400MB embedded payload —
-            # linuxdeploy fails on it; deb + rpm cover Linux bundled installs.
-            npm run tauri -- build --bundles deb,rpm
-          else
-            npm run tauri -- build
-          fi
+          # NSIS only — WiX light stalls for 10+ minutes linking the ~400MB
+          # bundled payload into the MSI; NSIS covers Windows installs.
+          npm run tauri -- build --bundles nsis
           mkdir -p release/bundled
           cp -r src-tauri/target/release/bundle/* release/bundled/ 2>/dev/null || true
           cp src-tauri/target/release/dsh-app* release/bundled/ 2>/dev/null || true
