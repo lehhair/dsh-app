@@ -45,7 +45,13 @@ jobs:
         shell: bash
         run: |
           node scripts/bundle-resources.mjs --external
-          npm run tauri -- build
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            # NSIS only — WiX light on the MSI target is pathologically slow
+            # even on the small external payload; NSIS covers Windows.
+            npm run tauri -- build --bundles nsis
+          else
+            npm run tauri -- build
+          fi
           mkdir -p release/external
           cp -r src-tauri/target/release/bundle/* release/external/ 2>/dev/null || true
           # standalone binary (small update payload for the launcher updater)
@@ -69,9 +75,13 @@ jobs:
         shell: bash
         run: |
           node scripts/bundle-resources.mjs
-          if [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
-            # AppImage cannot package the ~400MB embedded payload — linuxdeploy
-            # fails on it; deb + rpm cover Linux bundled installs.
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            # NSIS only — WiX light stalls for 10+ minutes linking the ~400MB
+            # bundled payload into the MSI; NSIS covers Windows installs.
+            npm run tauri -- build --bundles nsis
+          elif [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
+            # AppImage cannot package the ~400MB embedded payload —
+            # linuxdeploy fails on it; deb + rpm cover Linux bundled installs.
             npm run tauri -- build --bundles deb,rpm
           else
             npm run tauri -- build
