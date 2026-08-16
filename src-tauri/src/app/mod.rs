@@ -56,6 +56,7 @@ pub fn run() {
       commands::remote_connect,
       commands::shell_back,
       commands::shell_new_window,
+      commands::shell_ready,
       commands::open_devtools,
       commands::view_reload,
       commands::remote_disconnect,

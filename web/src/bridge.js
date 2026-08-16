@@ -33,6 +33,7 @@ export const bridge = {
   connect: (url) => invoke('shell_connect', { url }),
   back: () => invoke('shell_back'),
   newWindow: () => invoke('shell_new_window'),
+  shellReady: () => invoke('shell_ready'),
   reload: () => invoke('view_reload'),
   openDevTools: () => invoke('open_devtools'),
   onConnectionChanged: (callback) => on('connection:changed', callback),

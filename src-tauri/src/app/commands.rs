@@ -131,6 +131,18 @@ pub async fn shell_new_window(app: AppHandle, webview: Webview) -> Result<serde_
   Ok(serde_json::json!({ "ok": true }))
 }
 
+/// The shell page has painted — reveal the window (created hidden to avoid a
+/// white flash, the OpenCodeUI mark-window-ready model).
+#[tauri::command]
+pub fn shell_ready(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  let win_label = windows::label_of(&webview);
+  if let Some(window) = app.get_window(&win_label) {
+    let _ = window.show();
+    let _ = window.set_focus();
+  }
+  Ok(serde_json::json!({ "ok": true }))
+}
+
 /// Open DevTools for the invoking window (debug builds only; F12 from the
 /// shell page — the Electron app's behavior, no auto-open).
 #[tauri::command]

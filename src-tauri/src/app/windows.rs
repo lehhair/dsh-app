@@ -70,6 +70,9 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
     .title("DeepSeek Harness")
     .resizable(true)
     .min_inner_size(800.0, 560.0)
+    // Start hidden; the launcher calls shell_ready once it has painted, so
+    // the window never flashes white (OpenCodeUI's mark-window-ready model).
+    .visible(false)
     // The node-view init script (back button + theme sampler) also covers the
     // main webview on mobile, where dsh loads in this very webview. It is
     // inert on the launcher page (isDshPage gate) and on desktop node views
@@ -126,7 +129,7 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
   windows.states.lock().unwrap().insert(
     label.clone(),
     WinMeta {
-      win_label: label,
+      win_label: label.clone(),
       slot,
       launcher_url: String::new(),
       views: Mutex::new(HashMap::new()),
@@ -135,6 +138,59 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
       last_bounds: Mutex::new(None),
     },
   );
+  drop(windows);
+
+  // Pre-warm the settings overlay in the background so the first open is
+  // instant too (creation needs a main-thread round trip, hence async).
+  #[cfg(desktop)]
+  {
+    let app = app.clone();
+    let label = label.clone();
+    tauri::async_runtime::spawn(async move {
+      let _ = ensure_settings_view(&app, &label);
+    });
+  }
+  Ok(())
+}
+
+/// Create (hidden) the settings overlay child webview for a window, cached
+/// for instant show/hide afterwards.
+fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> {
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    let meta = states.get(win_label).ok_or("窗口不可用")?;
+    if meta.settings_view.lock().unwrap().is_some() {
+      return Ok(());
+    }
+  }
+  let window = app.get_window(win_label).ok_or("窗口不可用")?;
+  let label = format!("{win_label}-settings");
+  let builder = WebviewBuilder::new(label, WebviewUrl::App("settings.html".into()))
+    .transparent(true)
+    .on_page_load(move |webview, payload| {
+      if payload.event() == tauri::webview::PageLoadEvent::Finished {
+        let app = webview.app_handle();
+        let tokens = app.state::<Windows>().last_theme.lock().unwrap().clone();
+        if let Some(tokens) = tokens {
+          let _ = app.emit_to(webview.label(), "theme:sync", tokens);
+        }
+      }
+    });
+  let (width, height) = content_size(app, win_label);
+  let view = window
+    .add_child(
+      builder,
+      LogicalPosition::new(0.0, TITLEBAR_HEIGHT),
+      LogicalSize::new(width, height),
+    )
+    .map_err(|e| e.to_string())?;
+  let _ = view.hide();
+  let windows = app.state::<Windows>();
+  let states = windows.states.lock().unwrap();
+  if let Some(meta) = states.get(win_label) {
+    *meta.settings_view.lock().unwrap() = Some(view);
+  }
   Ok(())
 }
 
@@ -457,46 +513,37 @@ pub fn back_to_launcher(app: &AppHandle, win_label: &str) {
 
 #[cfg(desktop)]
 pub fn open_settings(app: &AppHandle, win_label: &str) -> Result<(), String> {
-  let windows = app.state::<Windows>();
-  let states = windows.states.lock().unwrap();
-  let Some(meta) = states.get(win_label) else {
-
-    return Err("窗口不可用".into());
-  };
-  let mut slot = meta.settings_view.lock().unwrap();
-  // Re-create so the settings view always sits on top of any node views.
-  if let Some(view) = slot.take() {
-    let _ = view.close();
+  // Hide node views first: the cached settings view is older than them, so
+  // it would sit below — hiding guarantees it is the only visible overlay.
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    let meta = states.get(win_label).ok_or("窗口不可用")?;
+    let views = meta.views.lock().unwrap();
+    for view in views.values() {
+      let _ = view.hide();
+    }
   }
-  drop(slot);
-  drop(states);
-  let window = app.get_window(win_label).ok_or("窗口不可用")?;
-  let label = format!("{win_label}-settings");
-  let builder = WebviewBuilder::new(label, WebviewUrl::App("settings.html".into()))
-    .transparent(true)
-    .on_page_load(move |webview, payload| {
-      if payload.event() == tauri::webview::PageLoadEvent::Finished {
-        let app = webview.app_handle();
-        let tokens = app.state::<Windows>().last_theme.lock().unwrap().clone();
-        if let Some(tokens) = tokens {
-          let _ = app.emit_to(webview.label(), "theme:sync", tokens);
-        }
-      }
-    });
-  let (width, height) = content_size(app, win_label);
-  let view = window
-    .add_child(
-      builder,
-      LogicalPosition::new(0.0, TITLEBAR_HEIGHT),
-      LogicalSize::new(width, height),
-    )
-    .map_err(|e| e.to_string())?;
+  if !settings_ready(app, win_label) {
+    ensure_settings_view(app, win_label)?;
+  }
   let windows = app.state::<Windows>();
   let states = windows.states.lock().unwrap();
   if let Some(meta) = states.get(win_label) {
-    *meta.settings_view.lock().unwrap() = Some(view);
+    if let Some(view) = meta.settings_view.lock().unwrap().as_ref() {
+      let _ = view.show();
+    }
   }
   Ok(())
+}
+
+fn settings_ready(app: &AppHandle, win_label: &str) -> bool {
+  let windows = app.state::<Windows>();
+  let states = windows.states.lock().unwrap();
+  states
+    .get(win_label)
+    .map(|meta| meta.settings_view.lock().unwrap().is_some())
+    .unwrap_or(false)
 }
 
 #[cfg(desktop)]
@@ -506,6 +553,13 @@ pub fn close_settings(app: &AppHandle, win_label: &str) {
   if let Some(meta) = states.get(win_label) {
     if let Some(view) = meta.settings_view.lock().unwrap().as_ref() {
       let _ = view.hide();
+    }
+    // Restore the node view the user was in.
+    let active = meta.active.lock().unwrap().clone();
+    if let Some(id) = active {
+      if let Some(view) = meta.views.lock().unwrap().get(&id) {
+        let _ = view.show();
+      }
     }
   }
 }

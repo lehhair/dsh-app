@@ -425,6 +425,8 @@ renderRemoteList()
 renderRestore()
 renderAutoLocal()
 renderDshVersion()
+// The window starts hidden to avoid a white flash; reveal it once painted.
+bridge.shellReady().catch(() => {})
 // Poll local status so the badge tracks boot/exit transitions live while the
 // launcher is on screen (e.g. restore boot, or stop from another window).
 setInterval(refresh, 1500)
