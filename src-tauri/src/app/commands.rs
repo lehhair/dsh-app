@@ -127,6 +127,13 @@ pub async fn dsh_update(app: AppHandle, target: String) -> Result<update::Update
   update::update_dsh(&app, &target).await
 }
 
+/// Install the latest dsh into the user-data runtime dir (bundled installer
+/// ships node + npm only — the runtime is installed on demand).
+#[tauri::command]
+pub async fn dsh_install(app: AppHandle) -> Result<update::UpdateResult, String> {
+  update::install_dsh(&app).await
+}
+
 // ---- launcher self-update (GitHub Releases) ----
 
 #[derive(Serialize)]

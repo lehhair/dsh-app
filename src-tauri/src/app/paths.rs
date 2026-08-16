@@ -39,6 +39,7 @@ impl Paths {
   pub fn resolve(app: &AppHandle) -> Self {
     let res = app.path().resource_dir().unwrap_or_default();
     let proj = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let user = app.path().app_data_dir().unwrap_or_else(|_| res.clone());
 
     let pick = |rel: &str| {
       let in_res = res.join("resources").join(rel);
@@ -86,7 +87,7 @@ impl Paths {
       }
     };
 
-    let (runtime_root, bundled) = resolve_runtime(&res, &proj);
+    let (runtime_root, bundled) = resolve_runtime(&res, &proj, &user);
 
     Paths {
       dsh_runtime: runtime_root.clone(),
@@ -118,7 +119,7 @@ impl Paths {
 
 /// Where the dsh runtime lives. Returns the dir that owns
 /// `node_modules/@deepseek-ai/dsh` plus whether the launcher manages it.
-fn resolve_runtime(res: &Path, proj: &Path) -> (PathBuf, bool) {
+fn resolve_runtime(res: &Path, proj: &Path, user: &Path) -> (PathBuf, bool) {
   let bundled_res = res.join("resources").join(".dsh-runtime");
   if bundled_res.join("node_modules/@deepseek-ai/dsh/lib/bin.js").exists() {
     return (bundled_res, true);
@@ -126,6 +127,13 @@ fn resolve_runtime(res: &Path, proj: &Path) -> (PathBuf, bool) {
   let proj_runtime = proj.join(".dsh-runtime");
   if proj_runtime.join("node_modules/@deepseek-ai/dsh/lib/bin.js").exists() {
     return (proj_runtime, true);
+  }
+  // The shell's on-demand install target (writable user-data dir). Checked
+  // before DSH_RUNTIME/global so a bundled install keeps using the runtime
+  // the app itself installed.
+  let user_runtime = user.join("dsh-runtime");
+  if user_runtime.join("node_modules/@deepseek-ai/dsh/lib/bin.js").exists() {
+    return (user_runtime, true);
   }
   if let Ok(env_dir) = std::env::var("DSH_RUNTIME") {
     return (PathBuf::from(env_dir), false);

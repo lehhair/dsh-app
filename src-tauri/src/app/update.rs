@@ -153,6 +153,75 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
   })
 }
 
+/// Install (or reinstall) the latest dsh into the user-data runtime dir the
+/// shell manages. The bundled installer ships node + npm only — the runtime
+/// is installed here on demand, then resolved like any other managed runtime.
+pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
+  let paths = Paths::resolve(app);
+  let target = app
+    .path()
+    .app_data_dir()
+    .map_err(|e| format!("无法定位数据目录：{e}"))?
+    .join("dsh-runtime");
+  std::fs::create_dir_all(&target).map_err(|e| format!("无法创建运行时目录：{e}"))?;
+
+  let notify = |line: &str| {
+    log::info!("[install] {line}");
+    let _ = app.emit("dsh:update-log", line);
+  };
+
+  notify("正在安装 @deepseek-ai/dsh（最新版）…");
+
+  let mut command = tokio::process::Command::new(&paths.node_exe);
+  command
+    .arg(&paths.npm_cli)
+    .args(["install", "@deepseek-ai/dsh@latest", "--no-audit", "--no-fund", "--loglevel", "error"])
+    .current_dir(&target)
+    .stdin(std::process::Stdio::null())
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped());
+  #[cfg(windows)]
+  {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+  }
+
+  let mut child = command
+    .spawn()
+    .map_err(|e| format!("无法启动 node：{e}"))?;
+  let stdout = child.stdout.take();
+  let stderr = child.stderr.take();
+  let app_for_lines = app.clone();
+  if let Some(out) = stdout {
+    tokio::spawn(stream_lines(out, app_for_lines.clone()));
+  }
+  if let Some(err) = stderr {
+    tokio::spawn(stream_lines(err, app_for_lines));
+  }
+
+  let status = child
+    .wait()
+    .await
+    .map_err(|e| format!("npm 进程异常：{e}"))?;
+  let code = status.code().unwrap_or(-1);
+  if code != 0 {
+    notify(&format!("安装失败（npm 退出码 {code}）"));
+    return Ok(UpdateResult {
+      ok: false,
+      version: None,
+      error: Some(format!("npm 退出码 {code}")),
+    });
+  }
+
+  let installed = Paths::resolve(app).local_dsh_version();
+  notify(&format!("安装完成：v{}", installed.as_deref().unwrap_or("?")));
+  Ok(UpdateResult {
+    ok: true,
+    version: installed,
+    error: None,
+  })
+}
+
 async fn stream_lines<R>(reader: R, app: AppHandle)
 where
   R: tokio::io::AsyncRead + Unpin + Send + 'static,

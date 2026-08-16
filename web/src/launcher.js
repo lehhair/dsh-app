@@ -230,14 +230,21 @@ bridge.onUpdateLog((line) => {
   setUpdateStatus(line, null)
 })
 
+let runtimeInstalled = false // a managed (bundled) runtime is present — the
+// bundled installer ships node+npm only, so dsh is installed on demand here.
+
 async function renderDshVersion() {
   const v = await bridge.dshVersion()
+  runtimeInstalled = !!v
   if (!external && !v) {
     dshVersionEl.textContent = '未安装'
+    checkUpdateBtn.textContent = '安装 dsh'
+    doUpdateBtn.hidden = true
   } else if (external && !v) {
     dshVersionEl.textContent = '未找到全局 dsh（npm i -g @deepseek-ai/dsh）'
   } else {
     dshVersionEl.textContent = `v${v}`
+    checkUpdateBtn.textContent = '检查更新'
   }
   dshVersionEl.className = 'version'
 }
@@ -274,6 +281,22 @@ async function checkLauncherUpdate() {
 
 checkUpdateBtn.addEventListener('click', async () => {
   checkUpdateBtn.disabled = true
+  // Bundled flavor with no runtime yet: this button installs dsh instead.
+  if (!external && !runtimeInstalled) {
+    setUpdateStatus('正在安装 dsh…', null)
+    try {
+      const r = await bridge.install()
+      if (r.ok) {
+        setUpdateStatus(`安装完成：v${r.version}`, 'ok')
+      } else {
+        setUpdateStatus(`安装失败：${r.error || '未知错误'}`, 'err')
+      }
+    } finally {
+      checkUpdateBtn.disabled = false
+      renderDshVersion() // refresh label + state after the install
+    }
+    return
+  }
   setUpdateStatus('正在检查更新…')
   try {
     const r = await bridge.checkUpdate()

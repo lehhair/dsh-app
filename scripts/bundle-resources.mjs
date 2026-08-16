@@ -1,10 +1,10 @@
 // Provision `resources/` for packaging — the build flavor is decided by what
 // lives here:
 //
-//   npm run bundle:resources        (bundled flavor) copies the official Node,
-//                                   the embedded dsh runtime (.dsh-runtime),
-//                                   and the npm CLI into resources/ so the
-//                                   installed app is self-contained.
+//   npm run bundle:resources        (bundled flavor) copies the official Node
+//                                   and the npm CLI into resources/; the dsh
+//                                   runtime is NOT bundled — the shell installs
+//                                   it on demand into the user-data dir.
 //   node scripts/bundle-resources.mjs --external   (external flavor) REMOVES
 //                                   those big artifacts, leaving only the tiny
 //                                   overlay — the installed app then uses the
@@ -43,7 +43,6 @@ function copy(src, dest) {
 }
 
 copy(join(root, 'embedded-overlay.yml'), 'embedded-overlay.yml')
-copy(join(root, '.dsh-runtime'), '.dsh-runtime')
 copy(join(root, 'node_modules', 'npm'), 'node_modules/npm')
 
 // The official Node binary for THIS platform (the node running this script
