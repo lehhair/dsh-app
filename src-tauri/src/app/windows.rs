@@ -39,6 +39,9 @@ pub struct WinMeta {
   pub views: Mutex<HashMap<String, Webview>>,
   pub active: Mutex<Option<String>>,
   pub settings_view: Mutex<Option<Webview>>,
+  /// True while a node view created after the current settings view exists —
+  /// the settings would sit below it until re-raised.
+  pub settings_below_node: std::sync::atomic::AtomicBool,
   pub last_bounds: Mutex<Option<SavedBounds>>,
 }
 
@@ -135,6 +138,7 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
       views: Mutex::new(HashMap::new()),
       active: Mutex::new(None),
       settings_view: Mutex::new(None),
+      settings_below_node: std::sync::atomic::AtomicBool::new(false),
       last_bounds: Mutex::new(None),
     },
   );
@@ -189,9 +193,27 @@ fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> 
   let windows = app.state::<Windows>();
   let states = windows.states.lock().unwrap();
   if let Some(meta) = states.get(win_label) {
+    meta.settings_below_node.store(false, std::sync::atomic::Ordering::SeqCst);
     *meta.settings_view.lock().unwrap() = Some(view);
   }
   Ok(())
+}
+
+/// Re-create the settings overlay so it sits above any node webview created
+/// after it (child-webview z-order follows creation order; there is no
+/// re-raise API). Runs in the background after each node view is created, so
+/// opening settings over a dsh page stays instant.
+fn re_raise_settings(app: &AppHandle, win_label: &str) {
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    if let Some(meta) = states.get(win_label) {
+      if let Some(old) = meta.settings_view.lock().unwrap().take() {
+        let _ = old.close();
+      }
+    }
+  }
+  let _ = ensure_settings_view(app, win_label);
 }
 
 fn validate_bounds(app: &AppHandle, saved: Option<SavedBounds>) -> Option<SavedBounds> {
@@ -465,6 +487,14 @@ fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Web
     .map_err(|e| e.to_string())?;
   let _ = view.hide();
   views.insert(id.to_string(), view.clone());
+  // The new node view sits above the (older) settings overlay — mark it and
+  // re-raise the settings in the background so opening it stays instant.
+  meta.settings_below_node.store(true, std::sync::atomic::Ordering::SeqCst);
+  let app = app.clone();
+  let win_label = win_label.to_string();
+  tauri::async_runtime::spawn(async move {
+    re_raise_settings(&app, &win_label);
+  });
   Ok(view)
 }
 
@@ -513,19 +543,20 @@ pub fn back_to_launcher(app: &AppHandle, win_label: &str) {
 
 #[cfg(desktop)]
 pub fn open_settings(app: &AppHandle, win_label: &str) -> Result<(), String> {
-  // Hide node views first: the cached settings view is older than them, so
-  // it would sit below — hiding guarantees it is the only visible overlay.
-  {
+  use std::sync::atomic::Ordering;
+  // The cached overlay sits above the dsh page thanks to the background
+  // re-raise after each connect; if a node view was created meanwhile (the
+  // brief window before the re-raise finishes), re-raise now.
+  let stale = {
     let windows = app.state::<Windows>();
     let states = windows.states.lock().unwrap();
-    let meta = states.get(win_label).ok_or("窗口不可用")?;
-    let views = meta.views.lock().unwrap();
-    for view in views.values() {
-      let _ = view.hide();
-    }
-  }
-  if !settings_ready(app, win_label) {
-    ensure_settings_view(app, win_label)?;
+    states
+      .get(win_label)
+      .map(|meta| meta.settings_below_node.load(Ordering::SeqCst))
+      .unwrap_or(false)
+  };
+  if stale || !settings_ready(app, win_label) {
+    re_raise_settings(app, win_label);
   }
   let windows = app.state::<Windows>();
   let states = windows.states.lock().unwrap();
@@ -553,13 +584,6 @@ pub fn close_settings(app: &AppHandle, win_label: &str) {
   if let Some(meta) = states.get(win_label) {
     if let Some(view) = meta.settings_view.lock().unwrap().as_ref() {
       let _ = view.hide();
-    }
-    // Restore the node view the user was in.
-    let active = meta.active.lock().unwrap().clone();
-    if let Some(id) = active {
-      if let Some(view) = meta.views.lock().unwrap().get(&id) {
-        let _ = view.show();
-      }
     }
   }
 }
