@@ -41,20 +41,6 @@ impl Paths {
     let proj = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     let user = app.path().app_data_dir().unwrap_or_else(|_| res.clone());
 
-    let pick = |rel: &str| {
-      let in_res = res.join("resources").join(rel);
-      if in_res.exists() {
-        in_res
-      } else {
-        let in_proj = proj.join(rel);
-        if in_proj.exists() {
-          in_proj
-        } else {
-          in_res
-        }
-      }
-    };
-
     // Bundled Node binary name: node.exe on Windows, node elsewhere.
     let node_name = if cfg!(windows) { "node.exe" } else { "node" };
     let node_exe = {
@@ -97,6 +83,13 @@ impl Paths {
     // is installed, so the UI offers 安装 dsh instead of the external message.
     let bundled = managed_runtime || ships_node;
 
+    // The embedded-run overlay is materialized from the CURRENT exe's compiled
+    // copy into the user-data dir, NOT read from the install-time resources:
+    // launcher self-update replaces only the exe, so a resources file would
+    // stay stale forever. Re-write whenever the content differs (e.g. after
+    // an update changed it).
+    let overlay = materialize_overlay(&user);
+
     // The dsh package lives under `node_modules` of the runtime root — EXCEPT
     // for the external flavor, where `global_npm_root()` already IS the global
     // `node_modules` dir. Joining `node_modules` again yields a path that can
@@ -118,7 +111,7 @@ impl Paths {
         .join("lib")
         .join("bin.js"),
       dsh_pkg: pkg_dir.join("@deepseek-ai").join("dsh").join("package.json"),
-      overlay: pick("embedded-overlay.yml"),
+      overlay,
       node_exe,
       npm_cli,
       bundled,
@@ -131,6 +124,32 @@ impl Paths {
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     value.get("version")?.as_str().map(str::to_string)
   }
+}
+
+/// The embedded-run overlay content, compiled into THIS exe. It lives in the
+/// repo root (`embedded-overlay.yml`) and is patched into dsh at start via
+/// `--patch`. It must follow the exe across launcher self-updates, so it is
+/// embedded here rather than shipped as an install-time resources file.
+const EMBEDDED_OVERLAY: &str = include_str!(concat!(
+  env!("CARGO_MANIFEST_DIR"),
+  "/../embedded-overlay.yml"
+));
+
+/// Write the current exe's overlay into the user-data dir (creating it if
+/// needed). Returns the path to pass as `--patch`. Rewrites only when the
+/// content changed (an update shipped a new overlay).
+fn materialize_overlay(user: &Path) -> PathBuf {
+  let dir = user.join("overlay");
+  let path = dir.join("embedded-overlay.yml");
+  let needs_write = match std::fs::read_to_string(&path) {
+    Ok(existing) => existing != EMBEDDED_OVERLAY,
+    Err(_) => true,
+  };
+  if needs_write {
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(&path, EMBEDDED_OVERLAY);
+  }
+  path
 }
 
 /// Diagnostics for the runtime-resolution chain — surfaced in the launcher

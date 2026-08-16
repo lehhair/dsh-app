@@ -42,7 +42,10 @@ function copy(src, dest) {
   console.log(`[bundle:resources] ${src} -> resources/${dest}`)
 }
 
-copy(join(root, 'embedded-overlay.yml'), 'embedded-overlay.yml')
+// The embedded-run overlay is compiled INTO the exe (paths.rs include_str!)
+// and materialized into user-data at runtime, so it is NOT copied here — a
+// resources copy would go stale across launcher self-updates (which replace
+// only the exe). The repo-root embedded-overlay.yml is the single source.
 copy(join(root, 'node_modules', 'npm'), 'node_modules/npm')
 
 // The official Node binary for THIS platform (the node running this script
