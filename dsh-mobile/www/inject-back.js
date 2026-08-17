@@ -11,6 +11,14 @@
 (function () {
   'use strict'
 
+  // The native layer re-evaluates this script on every onPageFinished,
+  // which can fire more than once per connect (redirect chains and WebView
+  // quirks). Only the first evaluation in a document may run: otherwise
+  // every copy keeps its own watcher and injects its own button, and the
+  // settings panel ends up with two "回到启动页" buttons.
+  if (window.__dshAppBackInjected) return
+  window.__dshAppBackInjected = true
+
   var BACK_KEY = 'dsh-app-back-to-launcher'
 
   function injectStyles() {
@@ -31,6 +39,13 @@
     var seat = document.querySelector('[data-slot="settings.action"]')
     var host = seat ? seat.parentElement : null
     if (!seat || !host) return
+    // Belt and braces: never append a second button if one is already in
+    // the host (covers any path that runs this script twice in a document).
+    var existing = host.querySelector('.' + BACK_KEY)
+    if (existing) {
+      backButton = existing
+      return
+    }
     var btn = document.createElement('button')
     btn.type = 'button'
     btn.className = BACK_KEY
