@@ -240,10 +240,10 @@ jobs:
           name: dsh-app v${{ steps.ver.outputs.v }}
           generate_release_notes: true
           # rolling release — every successful master build re-uploads the
-          # assets onto the same v<version> release; overwrite is required
-          # because the asset names already exist from the previous run
-          overwrite: true
-          update_release_body: true
+          # assets onto the same v<version> release; overwrite_files is the
+          # v2 input (the old `overwrite`/`update_release_body` are ignored
+          # and were only masked by the stale-asset deletion above)
+          overwrite_files: true
           files: out/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
