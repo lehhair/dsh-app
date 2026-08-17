@@ -18,6 +18,16 @@
 
 pub const NODE_VIEW_SCRIPT: &str = r#"
 (() => {
+  // wry re-evaluates initialization scripts on EVERY page load on Android
+  // (RustWebViewClient.onPageStarted loops initScripts -> evaluateJavascript),
+  // and the gateway's redirect chain can fire it more than once per
+  // document. Only the first evaluation in a document may run — otherwise
+  // every copy keeps its own watcher and injects its own button, and the
+  // settings panel ends up with two "回到启动页" buttons. (Desktop is
+  // immune: wry injects init scripts exactly once per webview there.)
+  if (window.__dshAppBackInjected) return;
+  window.__dshAppBackInjected = true;
+
   const TOKENS = [
     '--dsw-alias-bg-base',
     '--dsw-alias-bg-layer-1',
@@ -92,6 +102,13 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
     const seat = document.querySelector('[data-slot="settings.action"]');
     const host = seat && seat.parentElement;
     if (!seat || !host) return;
+    // Belt and braces: never append a second button if one is already in
+    // the host (covers any path that runs this script twice in a document).
+    const existing = host.querySelector('.' + BACK_KEY);
+    if (existing) {
+      backButton = existing;
+      return;
+    }
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = BACK_KEY;
