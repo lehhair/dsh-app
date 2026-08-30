@@ -44,6 +44,15 @@ const localEnter = document.getElementById('local-enter')
 
 async function renderLocal() {
   const s = await bridge.status()
+  // Poll only while the instance is booting, so the row follows the
+  // start transition live; steady state is refreshed by events instead of
+  // a permanent per-second IPC round trip from a (usually hidden) overlay.
+  if (s.starting && !bootTimer) {
+    bootTimer = setInterval(renderLocal, 1000)
+  } else if (!s.starting && bootTimer) {
+    clearInterval(bootTimer)
+    bootTimer = null
+  }
   if (s.starting) {
     localDot.className = 'dot chase'
     localDot.textContent = ''
@@ -76,6 +85,8 @@ async function renderLocal() {
   localToggle.disabled = false
   localEnter.disabled = !s.running
 }
+
+let bootTimer = null
 
 localToggle.addEventListener('click', async () => {
   dlgError.textContent = ''
@@ -200,8 +211,10 @@ instSearch.addEventListener('input', (event) => {
   renderInstances()
 })
 
+// 断开 = 离开当前节点回到启动页（壳的窗口模型里节点视图只是盖住启动页，
+// 没有独立的“断开连接”状态）。
 disconnectBtn.addEventListener('click', async () => {
-  await bridge.remote.disconnect()
+  await bridge.back()
   await bridge.settings.close()
 })
 
@@ -216,12 +229,12 @@ renderInstances()
 
 // The overlay is cached (pre-warmed hidden) — it read its state once at
 // window start. Refresh current connection + local instance whenever the
-// dialog is shown again, and poll the local status so the row follows
-// start/stop transitions live (chase animation included).
+// dialog is shown again; while hidden, state changes arrive via events
+// (no polling from a hidden page).
 bridge.onSettingsRefresh(() => {
   renderCurrent()
   renderLocal()
   renderInstances()
 })
-setInterval(renderLocal, 1000)
-setInterval(renderCurrent, 2000)
+bridge.onExited(() => renderLocal())
+bridge.onConnectionChanged(() => renderCurrent())

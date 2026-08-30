@@ -148,7 +148,6 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
       last_bounds: Mutex::new(None),
     },
   );
-  drop(windows);
 
   // Pre-warm the settings overlay in the background so the first open is
   // instant too (creation needs a main-thread round trip, hence async).
@@ -272,7 +271,7 @@ pub fn relayout(window: &tauri::Window) {
     let states = windows.states.lock().unwrap();
     if let Some(meta) = states.get(window.label()) {
       for view in meta.views.lock().unwrap().values() {
-        let _ = view.set_bounds(rect.clone());
+        let _ = view.set_bounds(rect);
       }
       if let Some(view) = meta.settings_view.lock().unwrap().as_ref() {
         let _ = view.set_bounds(rect);

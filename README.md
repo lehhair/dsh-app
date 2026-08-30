@@ -22,10 +22,10 @@ npm run build:external
   （`npm root -g` 下的 `@deepseek-ai/dsh`）→ `node` on PATH。
 - 外部版（`app_info.bundled === false`）：隐藏应用内 dsh 更新按钮（dsh 由用户自己的
   npm 管理，全局安装：`npm i -g @deepseek-ai/dsh`）；node 用 PATH 上的。
-- **启动器自更新（GitHub Releases）**：设置环境变量 `DSH_UPDATE_OWNER` /
-  `DSH_UPDATE_REPO` 后，启动页检测到更高版本的 release（tag `vX.Y.Z`，资产含
-  `.exe`）时显示「更新启动器」按钮；下载、替换 exe、自动重启，只更新启动器本体，
-  不重下 dsh 运行时。未设置环境变量时该功能静默关闭。
+- **启动器自更新（GitHub Releases）**：启动页检测到更高版本的 release（tag
+  `vX.Y.Z`，资产含 `.exe`）时显示「更新启动器」按钮；下载、替换 exe、自动重启，
+  只更新启动器本体，不重下 dsh 运行时。默认检查 `lehhair/dsh-app`，可用环境变量
+  `DSH_UPDATE_OWNER` / `DSH_UPDATE_REPO` 指向其他仓库（设为空则关闭）。
 - 内置版的 dsh 运行时更新走应用内「检查更新」（npm 更新 resources/.dsh-runtime）。
 
 ## 跨平台（Windows / macOS / Linux）

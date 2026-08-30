@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Launcher window background: matches dsh bluish-00 (light theme). -->
-    <color name="launcher_bg">#FFFFFF</color>
-    <!-- Theme accents (dsh deepseek-500 brand blue). -->
-    <color name="colorPrimary">#4176E6</color>
-    <color name="colorPrimaryDark">#2F5BB5</color>
-    <color name="colorAccent">#4176E6</color>
-</resources>

@@ -339,3 +339,69 @@ fn npm_root_command() -> Option<PathBuf> {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn temp_user_dir(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("dsh-app-test-{tag}-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+  }
+
+  fn overlay_files(user: &Path) -> (PathBuf, PathBuf) {
+    let dir = user.join("overlay");
+    (dir.join("embedded-overlay.yml"), dir.join(".overlay-default"))
+  }
+
+  #[test]
+  fn overlay_missing_file_gets_default() {
+    let user = temp_user_dir("missing");
+    let path = materialize_overlay(&user);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), EMBEDDED_OVERLAY);
+    let (_, snapshot) = overlay_files(&user);
+    assert_eq!(std::fs::read_to_string(snapshot).unwrap(), EMBEDDED_OVERLAY);
+    let _ = std::fs::remove_dir_all(&user);
+  }
+
+  #[test]
+  fn overlay_user_customization_survives() {
+    let user = temp_user_dir("custom");
+    let (path, snapshot) = overlay_files(&user);
+    // First run materializes the default, then the user edits the file.
+    materialize_overlay(&user);
+    std::fs::write(&path, "# my tweaks\n- custom: entry\n").unwrap();
+    materialize_overlay(&user);
+    // Untouched-by-update user content is kept; the snapshot still advances.
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "# my tweaks\n- custom: entry\n");
+    assert_eq!(std::fs::read_to_string(snapshot).unwrap(), EMBEDDED_OVERLAY);
+    let _ = std::fs::remove_dir_all(&user);
+  }
+
+  #[test]
+  fn overlay_stale_default_is_refreshed() {
+    let user = temp_user_dir("stale");
+    let (path, snapshot) = overlay_files(&user);
+    // The file still matches what the PREVIOUS exe wrote (user never
+    // touched it) — an update must replace it with the new default.
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "- old: default\n").unwrap();
+    std::fs::write(&snapshot, "- old: default\n").unwrap();
+    materialize_overlay(&user);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), EMBEDDED_OVERLAY);
+    let _ = std::fs::remove_dir_all(&user);
+  }
+
+  #[test]
+  fn overlay_comments_only_is_rewritten() {
+    let user = temp_user_dir("comments");
+    let (path, _) = overlay_files(&user);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "# only a comment\n\n").unwrap();
+    materialize_overlay(&user);
+    // A comments-only file parses as null and crashes dsh's loader.
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), EMBEDDED_OVERLAY);
+    let _ = std::fs::remove_dir_all(&user);
+  }
+}

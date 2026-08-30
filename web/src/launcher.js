@@ -95,15 +95,22 @@ function setState(status, port, url) {
   startBtn.disabled = running || status === 'starting'
 }
 
+let lastStatus = null // previous poll, for transition detection
+
 async function refresh() {
   const s = await bridge.status()
-  setState(s.starting ? 'starting' : s.running ? 'running' : 'idle', s.port, s.url)
-  if (s.running) {
+  const status = s.starting ? 'starting' : s.running ? 'running' : 'idle'
+  setState(status, s.port, s.url)
+  // The log ring is up to 5000 lines joined in Rust — refetching it every
+  // poll tick wastes IPC for nothing. Pull it while boot output is
+  // streaming in, and once on each state transition (final output).
+  if (status !== 'idle' && (status === 'starting' || status !== lastStatus)) {
     const logs = await bridge.logs()
     log.hidden = false
     log.textContent = logs.join('\n').slice(-4000)
     log.scrollTop = log.scrollHeight
   }
+  lastStatus = status
 }
 
 startBtn.addEventListener('click', async () => {

@@ -13,3 +13,7 @@ web/dist/
 # signing keys (never commit)
 *.keystore
 
+# local install/update test artifacts
+.inst-*
+.*-test*/
+

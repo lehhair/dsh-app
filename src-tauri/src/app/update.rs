@@ -8,6 +8,7 @@ use crate::app::service::{self, DshService};
 use crate::app::windows;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::process::{Child, Command};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,93 +26,169 @@ pub struct UpdateResult {
   pub error: Option<String>,
 }
 
-/// Run the bundled npm CLI under the bundled node. Returns (exit code, output).
-async fn run_npm(paths: &Paths, args: &[&str]) -> (i32, String) {
-  let mut command = tokio::process::Command::new(&paths.node_exe);
+// ---- shared process plumbing ----
+
+/// Child stdio: no input, output piped for collection/streaming.
+fn piped(command: &mut Command) -> &mut Command {
   command
-    .arg(&paths.npm_cli)
-    .args(args)
-    .current_dir(&paths.dsh_runtime)
     .stdin(std::process::Stdio::null())
     .stdout(std::process::Stdio::piped())
-    .stderr(std::process::Stdio::piped());
+    .stderr(std::process::Stdio::piped())
+}
+
+/// Never flash a console window on Windows (GUI app spawning CLI tools).
+fn no_window(command: &mut Command) {
   #[cfg(windows)]
   {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     command.creation_flags(CREATE_NO_WINDOW);
-  }
-  match command.spawn() {
-    Ok(child) => match child.wait_with_output().await {
-      Ok(output) => {
-        let code = output.status.code().unwrap_or(-1);
-        let text = String::from_utf8_lossy(&output.stdout).into_owned()
-          + &String::from_utf8_lossy(&output.stderr);
-        (code, text)
-      }
-      Err(e) => (-1, format!("{e}")),
-    },
-    Err(e) => (-1, format!("无法启动 node：{e}")),
   }
 }
 
-/// Run the system npm (`npm` on PATH) — used by the external flavor, which
-/// has no bundled node/npm. Windows npm is a .cmd shim, so wrap it in
-/// `cmd.exe /C` like every other batch spawn, with CREATE_NO_WINDOW.
-async fn run_system_npm(args: &[&str]) -> (i32, String) {
+/// Collect a spawned child's combined stdout+stderr and exit code.
+async fn wait_output(child: Child) -> (i32, String) {
+  match child.wait_with_output().await {
+    Ok(output) => {
+      let code = output.status.code().unwrap_or(-1);
+      let text = String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr);
+      (code, text)
+    }
+    Err(e) => (-1, format!("{e}")),
+  }
+}
+
+/// The system npm (`npm` on PATH) — used by the external flavor, which has
+/// no bundled node/npm. Windows npm is a .cmd shim that CreateProcess cannot
+/// run directly, so wrap it in `cmd.exe /C`.
+fn system_npm_command(args: &[&str]) -> Command {
   #[cfg(windows)]
   {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut command = tokio::process::Command::new("cmd.exe");
+    let mut command = Command::new("cmd.exe");
     command.arg("/C").arg("npm.cmd").args(args);
-    command.creation_flags(CREATE_NO_WINDOW);
     command
-      .stdin(std::process::Stdio::null())
-      .stdout(std::process::Stdio::piped())
-      .stderr(std::process::Stdio::piped());
-    match command.spawn() {
-      Ok(child) => match child.wait_with_output().await {
-        Ok(output) => {
-          let code = output.status.code().unwrap_or(-1);
-          let text = String::from_utf8_lossy(&output.stdout).into_owned()
-            + &String::from_utf8_lossy(&output.stderr);
-          (code, text)
-        }
-        Err(e) => (-1, format!("{e}")),
-      },
-      Err(e) => (-1, format!("无法启动 npm：{e}")),
-    }
   }
   #[cfg(not(windows))]
   {
-    let mut command = tokio::process::Command::new("npm");
+    let mut command = Command::new("npm");
     command.args(args);
     command
-      .stdin(std::process::Stdio::null())
-      .stdout(std::process::Stdio::piped())
-      .stderr(std::process::Stdio::piped());
-    match command.spawn() {
-      Ok(child) => match child.wait_with_output().await {
-        Ok(output) => {
-          let code = output.status.code().unwrap_or(-1);
-          let text = String::from_utf8_lossy(&output.stdout).into_owned()
-            + &String::from_utf8_lossy(&output.stderr);
-          (code, text)
-        }
-        Err(e) => (-1, format!("{e}")),
-      },
-      Err(e) => (-1, format!("无法启动 npm：{e}")),
-    }
   }
 }
+
+/// Run a quick npm query (no streaming, no cancel) and return (code, output).
+async fn run_npm_quiet(mut command: Command) -> (i32, String) {
+  piped(&mut command);
+  no_window(&mut command);
+  match command.spawn() {
+    Ok(child) => wait_output(child).await,
+    Err(e) => (-1, format!("无法启动 npm：{e}")),
+  }
+}
+
+/// The command that installs `@deepseek-ai/dsh@<version>` into `target_dir`.
+///
+/// Bundled flavor: the shipped node drives the bundled npm CLI. A package
+/// that shipped without them (broken build — resources missing) falls back
+/// to the user's own npm with `--prefix`, installing into the SAME dir so
+/// the launcher still manages the result. The external flavor instead
+/// updates the user's global dsh in place (`npm i -g`) — pass
+/// `target_dir = None` for that.
+fn install_command(paths: &Paths, version: &str, target_dir: Option<&std::path::Path>) -> Command {
+  let package = format!("@deepseek-ai/dsh@{version}");
+  let npm_args = ["--no-audit", "--no-fund", "--loglevel", "error"];
+  if paths.npm_cli.exists() {
+    // Bundled flavor: the shipped node drives the bundled npm CLI into the
+    // launcher-owned runtime dir (cwd).
+    let mut command = Command::new(&paths.node_exe);
+    command
+      .arg(&paths.npm_cli)
+      .arg("install")
+      .arg(&package)
+      .args(npm_args);
+    if let Some(dir) = target_dir {
+      command.current_dir(dir);
+    }
+    command
+  } else if let Some(dir) = target_dir {
+    // Launcher-managed runtime without bundled npm (broken package): use the
+    // user's own npm, never the global install.
+    let mut command = system_npm_command(&[]);
+    command
+      .arg("install")
+      .arg("--prefix")
+      .arg(dir)
+      .arg(&package)
+      .args(npm_args);
+    command
+  } else {
+    // External flavor: the user's own npm owns the global dsh — update it in
+    // place.
+    let mut command = system_npm_command(&[]);
+    command.arg("install").arg("-g").arg(&package).args(npm_args);
+    command
+  }
+}
+
+/// How a cancellable npm install ended.
+enum InstallOutcome {
+  /// npm exited with this code.
+  Completed(i32),
+  /// The user cancelled; the npm tree was killed.
+  Cancelled,
+}
+
+/// Spawn an npm install, stream its output lines to every shell window, and
+/// let `dsh_update_cancel` abort it (kills the npm process tree).
+async fn run_install(app: &AppHandle, service: &DshService, mut command: Command) -> Result<InstallOutcome, String> {
+  piped(&mut command);
+  no_window(&mut command);
+
+  let mut child = command
+    .spawn()
+    .map_err(|e| format!("无法启动 npm 安装进程：{e}"))?;
+  let stdout = child.stdout.take();
+  let stderr = child.stderr.take();
+  // Register a cancel signal so the user can abort this install.
+  let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
+  service::set_update_cancel(service, Some(cancel.clone()));
+  if let Some(out) = stdout {
+    tokio::spawn(stream_lines(out, app.clone()));
+  }
+  if let Some(err) = stderr {
+    tokio::spawn(stream_lines(err, app.clone()));
+  }
+
+  let status = tokio::select! {
+    s = child.wait() => s.map_err(|e| format!("npm 进程异常：{e}"))?,
+    _ = cancel.notified() => {
+      #[cfg(windows)]
+      if let Some(pid) = child.id() {
+        service::kill_tree(pid);
+      }
+      let _ = child.kill().await;
+      let _ = child.wait().await;
+      service::set_update_cancel(service, None);
+      return Ok(InstallOutcome::Cancelled);
+    }
+  };
+  service::set_update_cancel(service, None);
+  Ok(InstallOutcome::Completed(status.code().unwrap_or(-1)))
+}
+
+// ---- version check ----
 
 /// Latest published version on the registry, or None on failure. Uses the
 /// bundled npm when this install ships node+npm, the system npm otherwise
 /// (external flavor — the user's own npm owns the global dsh).
 pub async fn check_update(paths: &Paths) -> Option<UpdateInfo> {
+  let view = ["view", "@deepseek-ai/dsh", "version"];
   let (code, out) = if paths.npm_cli.exists() {
-    run_npm(paths, &["view", "@deepseek-ai/dsh", "version"]).await
+    let mut command = Command::new(&paths.node_exe);
+    command.arg(&paths.npm_cli).args(view).current_dir(&paths.dsh_runtime);
+    run_npm_quiet(command).await
   } else {
-    run_system_npm(&["view", "@deepseek-ai/dsh", "version"]).await
+    run_npm_quiet(system_npm_command(&view)).await
   };
   // npm may print warnings (e.g. unsupported Node version) AFTER the version
   // token — take the FIRST token that starts with a digit, not the last.
@@ -130,6 +207,8 @@ pub async fn check_update(paths: &Paths) -> Option<UpdateInfo> {
     latest,
   })
 }
+
+// ---- update / install ----
 
 /// Update dsh to `target` (exact version). Bundled installs (ships
 /// node+npm) install into the launcher-managed runtime via the bundled npm
@@ -150,111 +229,47 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
 
   notify(&format!("正在安装 @deepseek-ai/dsh@{target} …"));
 
-  let mut command = if paths.npm_cli.exists() {
-    // Bundled flavor: the shipped node drives the bundled npm CLI into the
-    // launcher-owned runtime dir.
-    let mut cmd = tokio::process::Command::new(&paths.node_exe);
-    cmd
-      .arg(&paths.npm_cli)
-      .args(["install", &format!("@deepseek-ai/dsh@{target}"), "--no-audit", "--no-fund", "--loglevel", "error"])
-      .current_dir(&paths.dsh_runtime);
-    cmd
-  } else {
-    // External flavor: the user's own npm owns the global dsh — update it in
-    // place. npm.cmd needs cmd.exe /C on Windows (no npm.exe exists); the
-    // outer Windows block below adds CREATE_NO_WINDOW.
-    let mut cmd = tokio::process::Command::new(if cfg!(windows) { "cmd.exe" } else { "npm" });
-    if cfg!(windows) {
-      cmd.arg("/C").arg("npm.cmd");
-    }
-    cmd.args(["install", "-g", &format!("@deepseek-ai/dsh@{target}"), "--no-audit", "--no-fund", "--loglevel", "error"]);
-    cmd
-  };
-  command
-    .stdin(std::process::Stdio::null())
-    .stdout(std::process::Stdio::piped())
-    .stderr(std::process::Stdio::piped());
-  #[cfg(windows)]
-  {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
-  }
-
-  let mut child = command
-    .spawn()
-    .map_err(|e| format!("无法启动 node：{e}"))?;
-  let stdout = child.stdout.take();
-  let stderr = child.stderr.take();
-  // Register a cancel signal so the user can abort this install.
-  let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
-  service::set_update_cancel(&service, Some(cancel.clone()));
-  let app_for_lines = app.clone();
-  if let Some(out) = stdout {
-    tokio::spawn(stream_lines(out, app_for_lines.clone()));
-  }
-  if let Some(err) = stderr {
-    tokio::spawn(stream_lines(err, app_for_lines));
-  }
-
-  let status = tokio::select! {
-    s = child.wait() => s.map_err(|e| format!("npm 进程异常：{e}"))?,
-    _ = cancel.notified() => {
-      // User cancelled: kill the npm tree, then report 已取消.
-      #[cfg(windows)]
-      if let Some(pid) = child.id() {
-        service::kill_tree(pid);
-      }
-      let _ = child.kill();
-      let _ = child.wait().await;
-      service::set_update_cancel(&service, None);
+  // External flavor has no launcher-owned runtime (target_dir = None → npm -g).
+  let target_dir = paths.bundled.then_some(paths.dsh_runtime.as_path());
+  let command = install_command(&paths, target, target_dir);
+  match run_install(app, &service, command).await? {
+    InstallOutcome::Cancelled => {
       notify("已取消更新");
+      if was_running {
+        let _ = service::start_local(app, &service).await;
+      }
+      return Ok(UpdateResult { ok: false, version: None, error: Some("已取消".into()) });
+    }
+    InstallOutcome::Completed(code) if code != 0 => {
+      notify(&format!("安装失败（npm 退出码 {code}）"));
       if was_running {
         let _ = service::start_local(app, &service).await;
       }
       return Ok(UpdateResult {
         ok: false,
         version: None,
-        error: Some("已取消".into()),
+        error: Some(format!("npm 退出码 {code}")),
       });
     }
-  };
-  service::set_update_cancel(&service, None);
-  let code = status.code().unwrap_or(-1);
-
-  if code != 0 {
-    notify(&format!("安装失败（npm 退出码 {code}）"));
-    if was_running {
-      let _ = service::start_local(app, &service).await;
-    }
-    return Ok(UpdateResult {
-      ok: false,
-      version: None,
-      error: Some(format!("npm 退出码 {code}")),
-    });
+    InstallOutcome::Completed(_) => {}
   }
 
   let installed = paths.local_dsh_version();
   notify(&format!("安装完成：v{}", installed.as_deref().unwrap_or(target)));
   if was_running {
-    let result = service::start_local(app, &service).await;
-    if let Ok(info) = result {
+    if let Ok(info) = service::start_local(app, &service).await {
       if let Some(url) = info.url {
         windows::reconnect_local_windows(app, &url).await;
       }
     }
   }
-  Ok(UpdateResult {
-    ok: true,
-    version: installed,
-    error: None,
-  })
+  Ok(UpdateResult { ok: true, version: installed, error: None })
 }
 
 /// Install (or reinstall) the latest dsh into the user-data runtime dir the
 /// shell manages. The bundled installer ships node + npm only — the runtime
 /// is installed here on demand, then resolved like any other managed runtime.
 pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
-  let paths = Paths::resolve(app);
   let service = app.state::<DshService>();
   let target = app
     .path()
@@ -270,72 +285,26 @@ pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
 
   notify("正在安装 @deepseek-ai/dsh（最新版）…");
 
-  let mut command = tokio::process::Command::new(&paths.node_exe);
-  command
-    .arg(&paths.npm_cli)
-    .args(["install", "@deepseek-ai/dsh@latest", "--no-audit", "--no-fund", "--loglevel", "error"])
-    .current_dir(&target)
-    .stdin(std::process::Stdio::null())
-    .stdout(std::process::Stdio::piped())
-    .stderr(std::process::Stdio::piped());
-  #[cfg(windows)]
-  {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
-  }
-
-  let mut child = command
-    .spawn()
-    .map_err(|e| format!("无法启动 node：{e}"))?;
-  let stdout = child.stdout.take();
-  let stderr = child.stderr.take();
-  // Register a cancel signal so the user can abort this install.
-  let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
-  service::set_update_cancel(&service, Some(cancel.clone()));
-  let app_for_lines = app.clone();
-  if let Some(out) = stdout {
-    tokio::spawn(stream_lines(out, app_for_lines.clone()));
-  }
-  if let Some(err) = stderr {
-    tokio::spawn(stream_lines(err, app_for_lines));
-  }
-
-  let status = tokio::select! {
-    s = child.wait() => s.map_err(|e| format!("npm 进程异常：{e}"))?,
-    _ = cancel.notified() => {
-      #[cfg(windows)]
-      if let Some(pid) = child.id() {
-        service::kill_tree(pid);
-      }
-      let _ = child.kill();
-      let _ = child.wait().await;
-      service::set_update_cancel(&service, None);
+  let command = install_command(&Paths::resolve(app), "latest", Some(&target));
+  match run_install(app, &service, command).await? {
+    InstallOutcome::Cancelled => {
       notify("已取消安装");
+      return Ok(UpdateResult { ok: false, version: None, error: Some("已取消".into()) });
+    }
+    InstallOutcome::Completed(code) if code != 0 => {
+      notify(&format!("安装失败（npm 退出码 {code}）"));
       return Ok(UpdateResult {
         ok: false,
         version: None,
-        error: Some("已取消".into()),
+        error: Some(format!("npm 退出码 {code}")),
       });
     }
-  };
-  service::set_update_cancel(&service, None);
-  let code = status.code().unwrap_or(-1);
-  if code != 0 {
-    notify(&format!("安装失败（npm 退出码 {code}）"));
-    return Ok(UpdateResult {
-      ok: false,
-      version: None,
-      error: Some(format!("npm 退出码 {code}")),
-    });
+    InstallOutcome::Completed(_) => {}
   }
 
   let installed = Paths::resolve(app).local_dsh_version();
   notify(&format!("安装完成：v{}", installed.as_deref().unwrap_or("?")));
-  Ok(UpdateResult {
-    ok: true,
-    version: installed,
-    error: None,
-  })
+  Ok(UpdateResult { ok: true, version: installed, error: None })
 }
 
 async fn stream_lines<R>(reader: R, app: AppHandle)
@@ -350,7 +319,9 @@ where
   }
 }
 
-/// Compare semver strings; >0 = a newer, <0 = a older, 0 = equal.
+/// Compare semver strings; >0 = a newer, <0 = a older, 0 = equal. Parse
+/// failures compare equal (no update offered) — a malformed registry answer
+/// must not trigger a downgrade.
 pub fn compare_versions(a: &str, b: &str) -> i32 {
   fn parse(v: &str) -> Option<(u32, u32, u32, Option<String>)> {
     let v = v.trim().trim_start_matches('v');
@@ -383,5 +354,35 @@ pub fn compare_versions(a: &str, b: &str) -> i32 {
         -1
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::compare_versions;
+
+  #[test]
+  fn version_compare_basic() {
+    assert_eq!(compare_versions("0.2.0", "0.2.0"), 0);
+    assert_eq!(compare_versions("0.2.1", "0.2.0"), 1);
+    assert_eq!(compare_versions("0.2.0", "0.2.1"), -1);
+    assert_eq!(compare_versions("1.0.0", "0.9.9"), 1);
+    assert_eq!(compare_versions("0.10.0", "0.9.0"), 1);
+  }
+
+  #[test]
+  fn version_compare_prefix_and_prerelease() {
+    // Tags carry a leading v; prereleases sort before their release.
+    assert_eq!(compare_versions("v0.3.0", "0.2.9"), 1);
+    assert_eq!(compare_versions("0.3.0-rc.1", "0.3.0"), -1);
+    assert_eq!(compare_versions("0.3.0", "0.3.0-rc.1"), 1);
+    assert_eq!(compare_versions("0.3.0-rc.2", "0.3.0-rc.1"), 1);
+  }
+
+  #[test]
+  fn version_compare_garbage_is_equal() {
+    // A malformed registry answer must not trigger an "update".
+    assert_eq!(compare_versions("garbage", "0.2.0"), 0);
+    assert_eq!(compare_versions("0.2.0", ""), 0);
   }
 }

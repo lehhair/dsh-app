@@ -35,7 +35,6 @@
     "allow-shell-ready",
     "allow-view-reload",
     "allow-open-devtools",
-    "allow-remote-disconnect",
     "allow-remote-list",
     "allow-remote-save",
     "allow-remote-remove",

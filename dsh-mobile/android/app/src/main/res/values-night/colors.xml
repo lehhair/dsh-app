@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Launcher window background: matches dsh bluish-950 (dark theme). -->
-    <color name="launcher_bg">#151517</color>
-</resources>

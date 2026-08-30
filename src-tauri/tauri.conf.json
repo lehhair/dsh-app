@@ -40,7 +40,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../resources/**/*": "resources/"
+      "../resources": "resources"
     },
     "windows": {
       "nsis": {

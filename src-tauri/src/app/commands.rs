@@ -170,20 +170,6 @@ fn launcher_repo() -> (String, String) {
   )
 }
 
-/// Dotted-semver compare: `a > b`.
-fn version_gt(a: &str, b: &str) -> bool {
-  let pa: Vec<u64> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-  let pb: Vec<u64> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-  for i in 0..pa.len().max(pb.len()) {
-    let x = pa.get(i).copied().unwrap_or(0);
-    let y = pb.get(i).copied().unwrap_or(0);
-    if x != y {
-      return x > y;
-    }
-  }
-  false
-}
-
 #[tauri::command]
 pub async fn check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo, String> {
   let none = || LauncherUpdateInfo {
@@ -218,7 +204,7 @@ pub async fn check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo,
   };
   let latest = tag.trim_start_matches('v');
   let current = app.package_info().version.to_string();
-  if !version_gt(latest, &current) {
+  if update::compare_versions(latest, &current) <= 0 {
     return Ok(none());
   }
   let assets = json.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
@@ -387,7 +373,7 @@ pub fn open_devtools(app: AppHandle, webview: Webview) -> Result<serde_json::Val
   if let Some(window) = app.get_window(&win_label) {
     let main = window.webviews().into_iter().find(|w| w.label() == win_label);
     if let Some(main) = main {
-      let _ = main.open_devtools();
+      main.open_devtools();
     }
   }
   Ok(serde_json::json!({ "ok": true }))
@@ -397,11 +383,6 @@ pub fn open_devtools(app: AppHandle, webview: Webview) -> Result<serde_json::Val
 pub fn view_reload(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
   let win_label = app_origin_gate(&app, &webview)?;
   windows::reload_active(&app, &win_label);
-  Ok(serde_json::json!({ "ok": true }))
-}
-
-#[tauri::command]
-pub fn remote_disconnect() -> Result<serde_json::Value, String> {
   Ok(serde_json::json!({ "ok": true }))
 }
 
@@ -498,7 +479,10 @@ pub fn settings_close(app: AppHandle, webview: Webview) -> Result<serde_json::Va
     let win_label = app_origin_gate(&app, &webview)?;
     windows::close_settings(&app, &win_label);
   }
-  let _ = (&app, &webview);
+  #[cfg(not(desktop))]
+  {
+    let _ = (&app, &webview);
+  }
   Ok(serde_json::json!({ "ok": true }))
 }
 
@@ -513,7 +497,7 @@ pub fn settings_get_login_item(app: AppHandle) -> bool {
   #[cfg(desktop)]
   {
     use tauri_plugin_autostart::ManagerExt;
-    return app.autolaunch().is_enabled().unwrap_or(false);
+    app.autolaunch().is_enabled().unwrap_or(false)
   }
   #[cfg(not(desktop))]
   {

@@ -36,6 +36,16 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: desktop-${{ matrix.platform }}
+
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        run: cargo test
+
       - name: Build external flavor
         shell: bash
         run: |

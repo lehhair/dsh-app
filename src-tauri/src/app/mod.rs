@@ -78,7 +78,6 @@ pub fn run() {
       commands::shell_ready,
       commands::open_devtools,
       commands::view_reload,
-      commands::remote_disconnect,
       commands::remote_list,
       commands::remote_save,
       commands::remote_remove,
@@ -276,8 +275,11 @@ fn cleanup_stale_embedded() {
   }
   #[cfg(not(windows))]
   {
+    // Only kill node processes whose command line carries the overlay — a
+    // bare `-f embedded-overlay.yml` would also match an editor with the
+    // file open or a grep running against it.
     let _ = std::process::Command::new("pkill")
-      .args(["-9", "-f", "embedded-overlay.yml"])
+      .args(["-9", "-f", "node.*embedded-overlay\\.yml"])
       .stdin(std::process::Stdio::null())
       .stdout(std::process::Stdio::null())
       .stderr(std::process::Stdio::null())

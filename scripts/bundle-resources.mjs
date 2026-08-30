@@ -31,10 +31,13 @@ if (external) {
   process.exit(0)
 }
 
-function copy(src, dest) {
+// The bundled flavor MUST ship node + npm — a silently skipped copy would
+// still "build" successfully and ship an installer whose on-demand 安装 dsh
+// then dies with npm exit code 1 (the npm CLI path only exists on the build
+// machine). Fail the build instead of shipping a broken package.
+function copyRequired(src, dest, what) {
   if (!existsSync(src)) {
-    console.warn(`[bundle:resources] missing source, skipped: ${src}`)
-    return
+    throw new Error(`[bundle:resources] FATAL: ${what} missing at ${src} — the bundled installer would ship without node/npm. Run \`npm ci\` first (npm is a package.json dependency).`)
   }
   const destPath = join(out, dest)
   mkdirSync(dirname(destPath), { recursive: true })
@@ -46,7 +49,7 @@ function copy(src, dest) {
 // and materialized into user-data at runtime, so it is NOT copied here — a
 // resources copy would go stale across launcher self-updates (which replace
 // only the exe). The repo-root embedded-overlay.yml is the single source.
-copy(join(root, 'node_modules', 'npm'), 'node_modules/npm')
+copyRequired(join(root, 'node_modules', 'npm'), 'node_modules/npm', 'the npm CLI')
 
 // The official Node binary for THIS platform (the node running this script
 // — i.e. the one npm used), named node.exe on Windows / node elsewhere.

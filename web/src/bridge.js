@@ -47,7 +47,6 @@ export const bridge = {
   // remote node registry
   remote: {
     connect: (id) => invoke('remote_connect', { id }),
-    disconnect: () => invoke('remote_disconnect'),
     list: () => invoke('remote_list'),
     save: (input) => invoke('remote_save', { input }),
     remove: (id) => invoke('remote_remove', { id }),

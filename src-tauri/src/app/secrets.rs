@@ -11,6 +11,12 @@ mod imp {
 
   pub struct Secrets;
 
+  impl Default for Secrets {
+    fn default() -> Self {
+      Self
+    }
+  }
+
   impl Secrets {
     pub fn new() -> Self {
       Self
