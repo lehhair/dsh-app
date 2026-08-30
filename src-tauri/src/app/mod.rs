@@ -6,6 +6,7 @@ pub mod commands;
 pub mod inject;
 pub mod mobile;
 pub mod paths;
+pub mod registry;
 pub mod secrets;
 pub mod service;
 pub mod store;
@@ -111,6 +112,8 @@ pub fn run() {
       commands::settings_set_restore,
       commands::settings_get_auto_local,
       commands::settings_set_auto_local,
+      commands::registry_get,
+      commands::registry_set,
       commands::theme_changed,
     ])
     .setup(|app| {

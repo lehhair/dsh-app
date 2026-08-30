@@ -597,6 +597,53 @@ bridge.onConnectionChanged((detail) => {
   titleStatus.textContent = detail.name || 'DeepSeek Harness'
 })
 
+// ---- npm registry (源) ----
+const registryLabel = document.getElementById('registry-label')
+const registryForm = document.getElementById('registry-form')
+const registryCustom = document.getElementById('registry-custom')
+const registryError = document.getElementById('registry-error')
+
+async function renderRegistry() {
+  const r = await bridge.registry.get().catch(() => null)
+  if (!r) {
+    registryLabel.textContent = 'npm 源：读取失败'
+    return
+  }
+  registryLabel.textContent = `npm 源：${r.registry}`
+  registryLabel.title = r.registry === r.default ? '官方源' : '镜像源'
+}
+
+async function saveRegistry(url) {
+  registryError.textContent = ''
+  try {
+    await bridge.registry.set(url)
+    registryForm.hidden = true
+    renderRegistry()
+  } catch (e) {
+    registryError.textContent = e || '保存失败'
+  }
+}
+
+document.getElementById('registry-edit').addEventListener('click', () => {
+  registryError.textContent = ''
+  registryCustom.value = ''
+  registryForm.hidden = !registryForm.hidden
+})
+document.getElementById('registry-cancel').addEventListener('click', () => {
+  registryForm.hidden = true
+})
+registryForm.querySelectorAll('[data-registry]').forEach((btn) => {
+  btn.addEventListener('click', () => saveRegistry(btn.dataset.registry))
+})
+document.getElementById('registry-save').addEventListener('click', () => {
+  const url = registryCustom.value.trim()
+  if (!url) {
+    registryError.textContent = '请输入源地址'
+    return
+  }
+  saveRegistry(url)
+})
+
 // ---- platform adaptation ----
 bridge.appInfo().then((info) => {
   document.body.classList.add(info.desktop ? 'desktop' : 'mobile')
@@ -643,6 +690,7 @@ renderRemoteList()
 renderRestore()
 renderAutoLocal()
 renderDshVersion()
+renderRegistry()
 checkLauncherUpdate()
 // The window starts hidden to avoid a white flash; reveal it once painted.
 bridge.shellReady().catch(() => {})

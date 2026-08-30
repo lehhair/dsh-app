@@ -48,6 +48,8 @@
     "allow-settings-set-restore",
     "allow-settings-get-auto-local",
     "allow-settings-set-auto-local",
+    "allow-registry-get",
+    "allow-registry-set",
     "allow-theme-changed"
   ]
 }

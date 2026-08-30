@@ -25,10 +25,10 @@ const external = process.argv.includes('--external')
 
 if (external) {
   // External flavor: drop the runtime payload, keep only the overlay.
-  for (const rel of ['.dsh-runtime', 'node.exe', 'node_modules']) {
+  for (const rel of ['.dsh-runtime', 'node.exe', 'node_modules', 'dsh-runtime-seed']) {
     rmSync(join(out, rel), { recursive: true, force: true })
   }
-  console.log('[bundle:resources] external flavor: removed .dsh-runtime / node.exe / node_modules')
+  console.log('[bundle:resources] external flavor: removed .dsh-runtime / node.exe / node_modules / dsh-runtime-seed')
   process.exit(0)
 }
 
@@ -91,3 +91,41 @@ if (npmEngines) {
 
 cpSync(nodeSrc, join(out, nodeName))
 console.log(`[bundle:resources] node ${nodeName} <- ${nodeSrc}`)
+
+// Lockfile seed for the on-demand 安装 dsh: resolving dsh's ~250 same-version
+// cross-linked packages from scratch pegs one core for 10+ minutes (semver
+// backtracking, 4 GB heap — CPU-bound, mirrors do not help). With a lockfile
+// the SAME install is `npm ci` — 528 packages resolved in under a second.
+// Generate the lock once here, on the build machine (supported node/npm pair,
+// fast network); npm's default replace-registry-host rewrites the locked
+// npmjs.org URLs to whatever registry the USER configured (~/.npmrc mirror).
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+{
+  const seedTmp = mkdtempSync(join(tmpdir(), 'dsh-seed-'))
+  writeFileSync(
+    join(seedTmp, 'package.json'),
+    JSON.stringify({ name: 'dsh-runtime', private: true, dependencies: { '@deepseek-ai/dsh': 'latest' } }),
+  )
+  const npmCli = join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  try {
+    execFileSync(nodeSrc, [npmCli, 'install', '--package-lock-only', '--no-audit', '--no-fund', '--loglevel', 'error'], {
+      cwd: seedTmp,
+      stdio: ['ignore', 'pipe', 'inherit'],
+      timeout: 15 * 60 * 1000,
+    })
+    const lock = JSON.parse(readFileSync(join(seedTmp, 'package-lock.json'), 'utf8'))
+    const pinned = lock.packages?.['node_modules/@deepseek-ai/dsh']?.version
+    if (!pinned) throw new Error('seed lock has no @deepseek-ai/dsh entry')
+    const seedOut = join(out, 'dsh-runtime-seed')
+    mkdirSync(seedOut, { recursive: true })
+    cpSync(join(seedTmp, 'package.json'), join(seedOut, 'package.json'))
+    cpSync(join(seedTmp, 'package-lock.json'), join(seedOut, 'package-lock.json'))
+    console.log(`[bundle:resources] runtime seed: @deepseek-ai/dsh@${pinned} lockfile -> resources/dsh-runtime-seed`)
+  } catch (e) {
+    // Not fatal: without the seed the shell falls back to a plain (slow but
+    // correct) npm install at runtime.
+    console.warn(`[bundle:resources] WARN: seed generation failed (${e.message}) — 安装 dsh will use the slow resolver path`)
+  }
+  rmSync(seedTmp, { recursive: true, force: true })
+}

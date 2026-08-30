@@ -571,6 +571,25 @@
             <span id="launcher-update-label" class="meta" style="margin:0;font-size:13px"></span>
             <button id="launcher-update" class="btn sm primary">更新启动器</button>
           </div>
+          <div class="actions" style="margin:2px 0 6px">
+            <span id="registry-label" class="meta" style="margin:0;font-size:13px">npm 源：…</span>
+            <button id="registry-edit" class="btn sm ghost">换源</button>
+          </div>
+          <div class="remote-form" id="registry-form" hidden>
+            <div class="actions">
+              <button class="btn sm outline" data-registry="https://registry.npmjs.org/">官方源</button>
+              <button class="btn sm outline" data-registry="https://registry.npmmirror.com">npmmirror（国内）</button>
+            </div>
+            <div class="field-row" style="margin-top:8px">
+              <input class="field" id="registry-custom" placeholder="自定义源地址，https://…" spellcheck="false" />
+            </div>
+            <div class="actions" style="margin-top:10px">
+              <button id="registry-save" class="btn sm primary">保存</button>
+              <button id="registry-cancel" class="btn sm ghost">取消</button>
+            </div>
+            <p class="hint" style="margin:8px 0 0">写入 ~/.npmrc，对本机所有 npm 操作（含 dsh 安装/更新）生效</p>
+            <p class="error" id="registry-error" style="min-height:0;margin:4px 0 0"></p>
+          </div>
           <pre class="log" id="log" hidden></pre>
 
           <div class="group">

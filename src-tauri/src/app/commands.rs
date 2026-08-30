@@ -585,6 +585,24 @@ pub fn settings_set_auto_local(app: AppHandle, enabled: bool) -> Result<serde_js
   Ok(serde_json::json!({ "ok": true }))
 }
 
+// ---- npm registry (源) ----
+
+#[tauri::command]
+pub fn registry_get(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  let _ = app_origin_gate(&app, &webview)?;
+  Ok(serde_json::json!({
+    "registry": crate::app::registry::get(&app),
+    "default": crate::app::registry::DEFAULT_REGISTRY,
+  }))
+}
+
+#[tauri::command]
+pub fn registry_set(app: AppHandle, webview: Webview, url: String) -> Result<serde_json::Value, String> {
+  let _ = app_origin_gate(&app, &webview)?;
+  crate::app::registry::set(&app, url.trim())?;
+  Ok(serde_json::json!({ "ok": true }))
+}
+
 // ---- live theme sync (from the connected dsh page) ----
 
 #[tauri::command]

@@ -53,6 +53,12 @@ export const bridge = {
     health: (id) => invoke('remote_health', { id }),
   },
 
+  // npm registry (源) management (~/.npmrc)
+  registry: {
+    get: () => invoke('registry_get'),
+    set: (url) => invoke('registry_set', { url }),
+  },
+
   // settings dialog + shell behavior
   settings: {
     open: () => invoke('settings_open'),

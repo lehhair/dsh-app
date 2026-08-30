@@ -283,6 +283,37 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
   Ok(UpdateResult { ok: true, version: installed, error: None })
 }
 
+/// `npm ci` from the shipped lockfile seed, when both the bundled npm and
+/// the seed exist. Resolving dsh's ~250 same-version cross-linked packages
+/// from scratch pegs one core for 10+ minutes; with the seed's lockfile the
+/// same install takes seconds (npm's replace-registry-host rewrites the
+/// locked npmjs.org URLs to the user's configured mirror).
+fn seed_ci_command(app: &AppHandle, paths: &Paths, target: &std::path::Path) -> Option<Command> {
+  if !paths.npm_cli.exists() {
+    return None;
+  }
+  let seed = [
+    app.path().resource_dir().ok().map(|r| r.join("resources").join("dsh-runtime-seed")),
+    Some(
+      std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("resources")
+        .join("dsh-runtime-seed"),
+    ),
+  ]
+  .into_iter()
+  .flatten()
+  .find(|p| p.join("package-lock.json").exists())?;
+  std::fs::copy(seed.join("package.json"), target.join("package.json")).ok()?;
+  std::fs::copy(seed.join("package-lock.json"), target.join("package-lock.json")).ok()?;
+  let mut command = Command::new(&paths.node_exe);
+  command
+    .arg(&paths.npm_cli)
+    .args(["ci", "--no-audit", "--no-fund", "--loglevel", "error"])
+    .current_dir(target);
+  Some(command)
+}
+
 /// Install (or reinstall) the latest dsh into the user-data runtime dir the
 /// shell manages. The bundled installer ships node + npm only — the runtime
 /// is installed here on demand, then resolved like any other managed runtime.
@@ -294,7 +325,6 @@ pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
     .map_err(|e| format!("无法定位数据目录：{e}"))?
     .join("dsh-runtime");
   std::fs::create_dir_all(&target).map_err(|e| format!("无法创建运行时目录：{e}"))?;
-  ensure_package_json(&target)?;
 
   let notify = |line: &str| {
     log::info!("[install] {line}");
@@ -303,7 +333,17 @@ pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
 
   notify("正在安装 @deepseek-ai/dsh（最新版）…");
 
-  let command = install_command(&Paths::resolve(app), "latest", Some(&target));
+  let paths = Paths::resolve(app);
+  let command = match seed_ci_command(app, &paths, &target) {
+    Some(command) => {
+      notify("使用内置锁文件快速安装…");
+      command
+    }
+    None => {
+      ensure_package_json(&target)?;
+      install_command(&paths, "latest", Some(&target))
+    }
+  };
   match run_install(app, &service, command).await? {
     InstallOutcome::Cancelled => {
       notify("已取消安装");
