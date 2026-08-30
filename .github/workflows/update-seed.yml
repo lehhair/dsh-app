@@ -1,0 +1,58 @@
+name: update-seed
+
+on:
+  # Daily at 02:37 Beijing time (18:37 UTC). Manual run anytime.
+  schedule:
+    - cron: '37 18 * * *'
+  workflow_dispatch:
+
+# contents: write to push the refreshed lock; actions: write to dispatch the
+# release build (GITHUB_TOKEN pushes do NOT trigger workflows by themselves).
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Regenerating the lock means resolving dsh's ~250 same-version
+    # cross-linked packages — pathologically slow (semver backtracking),
+    # measured 15+ minutes on a cold runner. It is a background cron, so give
+    # it room; a failure here is harmless (builds keep the last good seed).
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Compare pinned vs latest dsh
+        id: ver
+        run: |
+          LATEST=$(npm view @deepseek-ai/dsh version)
+          PINNED=$(node -p "require('./seed/dsh-runtime/package-lock.json').packages['node_modules/@deepseek-ai/dsh'].version")
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+          echo "pinned=$PINNED latest=$LATEST"
+
+      - name: Regenerate the lockfile
+        if: steps.ver.outputs.latest != steps.ver.outputs.pinned
+        run: |
+          cd seed/dsh-runtime
+          npm install "@deepseek-ai/dsh@${{ steps.ver.outputs.latest }}" --package-lock-only --no-audit --no-fund --loglevel error
+
+      - name: Commit the refreshed seed
+        if: steps.ver.outputs.latest != steps.ver.outputs.pinned
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add seed/dsh-runtime/package.json seed/dsh-runtime/package-lock.json
+          git commit -m "seed: bump dsh-runtime lock to @deepseek-ai/dsh@${{ steps.ver.outputs.latest }}"
+          git push
+
+      - name: Trigger the release build
+        if: steps.ver.outputs.latest != steps.ver.outputs.pinned
+        run: gh workflow run build.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

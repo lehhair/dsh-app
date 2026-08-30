@@ -98,7 +98,8 @@ console.log(`[bundle:resources] node ${nodeName} <- ${nodeSrc}`)
 // lock is TRACKED in the repo (seed/dsh-runtime/) instead of regenerated per
 // build. With it the user's first install is `npm ci` (452 packages in ~25s,
 // measured); npm's replace-registry-host rewrites the locked npmjs.org URLs
-// to whatever registry the user configured. Refresh the pin occasionally:
+// to whatever registry the user configured. The pin is refreshed
+// automatically by the daily update-seed workflow; manual refresh:
 //   cd seed/dsh-runtime && npm install @deepseek-ai/dsh@latest --package-lock-only
 copyRequired(join(root, 'seed', 'dsh-runtime', 'package.json'), 'dsh-runtime-seed/package.json', 'the dsh-runtime seed')
 copyRequired(join(root, 'seed', 'dsh-runtime', 'package-lock.json'), 'dsh-runtime-seed/package-lock.json', 'the dsh-runtime seed')
