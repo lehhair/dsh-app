@@ -275,16 +275,25 @@ fn global_npm_root_cached() -> Option<PathBuf> {
 /// The user's global npm node_modules dir (`npm root -g`), used by the
 /// external flavor to find a globally installed `@deepseek-ai/dsh`.
 ///
-/// Pure path probing comes first — zero processes spawned, so this never
-/// flashes a console, never depends on the working directory or a spawn
-/// succeeding, and never adds startup latency. `npm root -g` remains as a
-/// fallback for non-default prefixes (custom `npm config prefix`).
+/// `npm root -g` comes FIRST: it reports where the npm on PATH actually
+/// installs global packages — the authoritative answer. Probing default
+/// prefixes (%APPDATA%\npm\node_modules) first is WRONG on machines with a
+/// custom prefix: a stale dsh copy left over in the default dir would shadow
+/// the real root, so the shell reads the version from one dir while
+/// `npm i -g` writes updates into another ("已更新至 v0.1.0-rc.6" forever).
+/// The default-dir probes remain only as fallbacks for the case where npm
+/// is not on PATH at all.
 fn global_npm_root() -> Option<PathBuf> {
   let probe = |root: &Path| root.join("@deepseek-ai/dsh/lib/bin.js").exists();
 
-  // 1. npm's default global root: %APPDATA%\npm\node_modules on Windows,
-  // /usr/local/lib/node_modules on Unix. Zero processes spawned — no console
-  // flash, no working-directory dependence, no startup latency.
+  // 1. The authoritative answer: what `npm i -g` actually writes into.
+  if let Some(root) = npm_root_command().filter(|root| probe(root)) {
+    return Some(root);
+  }
+
+  // 2. npm's default global root: %APPDATA%\npm\node_modules on Windows,
+  // /usr/local/lib/node_modules on Unix. Fallback for npm-not-on-PATH —
+  // a stale copy here is still better than reporting 未找到全局 dsh.
   #[cfg(windows)]
   if let Some(appdata) = std::env::var_os("APPDATA") {
     let default = PathBuf::from(appdata).join("npm").join("node_modules");
@@ -303,10 +312,7 @@ fn global_npm_root() -> Option<PathBuf> {
       }
     }
   }
-
-  // 2. `npm root -g` output, for non-default prefixes. Never fatal — a
-  // failure here returns None, it does not hide anything.
-  npm_root_command().filter(|root| probe(root))
+  None
 }
 
 /// Run `npm root -g` and return the first line. Windows npm is a .cmd batch
