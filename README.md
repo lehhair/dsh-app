@@ -10,6 +10,12 @@ DeepSeek Harness 桌面壳：深度内嵌 dsh 运行时（PC），渲染内容�
 两种发布形态由 `resources/` 里的内容决定，先 `npm run build:web`（前端已内嵌，
 改前端必须重新 `cargo build` 才会进 exe）：
 
+> 构建 bundled 版的 node 必须满足内置 npm 的 engines（npm 12：`^22.22.2 || ^24.15.0
+> || >=26.0.0`），`bundle-resources.mjs` 会校验并直接 fail；不满足时升级 node 或设
+> `DSH_NODE` 指向合规二进制。
+> 首次「安装 dsh」要解析 250+ 个依赖包，网络慢时会等较久；npm 走用户 `~/.npmrc`，
+> 可配 registry 镜像加速。
+
 ```powershell
 # 自包含版：把官方 node.exe + .dsh-runtime + npm CLI 复制进 resources/ 再打包
 npm run build:bundled
