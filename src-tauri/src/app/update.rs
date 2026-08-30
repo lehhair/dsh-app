@@ -130,6 +130,18 @@ fn install_command(paths: &Paths, version: &str, target_dir: Option<&std::path::
   }
 }
 
+/// npm resolves the install prefix by CLIMBING to the nearest ancestor that
+/// has a package.json / node_modules — without one in the runtime dir, an
+/// install could land in a parent directory the resolver never looks at.
+fn ensure_package_json(dir: &std::path::Path) -> Result<(), String> {
+  let pkg = dir.join("package.json");
+  if !pkg.exists() {
+    std::fs::write(&pkg, "{\"name\":\"dsh-runtime\",\"private\":true}\n")
+      .map_err(|e| format!("无法初始化运行时目录：{e}"))?;
+  }
+  Ok(())
+}
+
 /// How a cancellable npm install ended.
 enum InstallOutcome {
   /// npm exited with this code.
@@ -184,8 +196,10 @@ async fn run_install(app: &AppHandle, service: &DshService, mut command: Command
 pub async fn check_update(paths: &Paths) -> Option<UpdateInfo> {
   let view = ["view", "@deepseek-ai/dsh", "version"];
   let (code, out) = if paths.npm_cli.exists() {
+    // No cwd: `npm view` is project-independent, and the runtime dir may not
+    // exist yet (pre-install) — an invalid cwd fails the spawn outright.
     let mut command = Command::new(&paths.node_exe);
-    command.arg(&paths.npm_cli).args(view).current_dir(&paths.dsh_runtime);
+    command.arg(&paths.npm_cli).args(view);
     run_npm_quiet(command).await
   } else {
     run_npm_quiet(system_npm_command(&view)).await
@@ -231,6 +245,9 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
 
   // External flavor has no launcher-owned runtime (target_dir = None → npm -g).
   let target_dir = paths.bundled.then_some(paths.dsh_runtime.as_path());
+  if let Some(dir) = target_dir {
+    ensure_package_json(dir)?;
+  }
   let command = install_command(&paths, target, target_dir);
   match run_install(app, &service, command).await? {
     InstallOutcome::Cancelled => {
@@ -277,6 +294,7 @@ pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
     .map_err(|e| format!("无法定位数据目录：{e}"))?
     .join("dsh-runtime");
   std::fs::create_dir_all(&target).map_err(|e| format!("无法创建运行时目录：{e}"))?;
+  ensure_package_json(&target)?;
 
   let notify = |line: &str| {
     log::info!("[install] {line}");

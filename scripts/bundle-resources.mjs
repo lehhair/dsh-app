@@ -13,7 +13,8 @@
 // `tauri build` bundles resources/** next to the exe; Paths::resolve falls
 // back to the project root in dev, so this script only matters for packages.
 
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -57,5 +58,36 @@ copyRequired(join(root, 'node_modules', 'npm'), 'node_modules/npm', 'the npm CLI
 // own OS so the bundled node and .dsh-runtime native modules match.
 const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
 const nodeSrc = process.env.DSH_NODE || process.execPath
+
+// The bundled node must satisfy the bundled npm CLI's engines — npm only
+// WARNS on a mismatch today (the check-update parser already has to skip
+// that warning), but any npm internal API bump turns the pair into an
+// installer whose 安装 dsh fails on the user's machine. Fail the build.
+function satisfiesEngines(version, range) {
+  const v = version.trim().replace(/^v/, '').split('.').map(Number)
+  const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
+  return range.split('||').some((clause) => {
+    const m = clause.trim().match(/^(\^|>=)?\s*(\d+)\.(\d+)\.(\d+)$/)
+    if (!m) return false
+    const base = [+m[2], +m[3], +m[4]]
+    if (m[1] === '^') return v[0] === base[0] && cmp(v, base) >= 0
+    if (m[1] === '>=') return cmp(v, base) >= 0
+    return cmp(v, base) === 0
+  })
+}
+const npmEngines = JSON.parse(
+  readFileSync(join(root, 'node_modules', 'npm', 'package.json'), 'utf8'),
+).engines?.node
+if (npmEngines) {
+  const nodeVersion = execFileSync(nodeSrc, ['--version'], { encoding: 'utf8' }).trim()
+  if (!satisfiesEngines(nodeVersion, npmEngines)) {
+    throw new Error(
+      `[bundle:resources] FATAL: bundled node ${nodeVersion} does not satisfy the bundled npm's engines (${npmEngines})` +
+      ' — 安装 dsh would fail on user machines. Build with a newer node or set DSH_NODE.',
+    )
+  }
+  console.log(`[bundle:resources] node ${nodeVersion} satisfies npm engines (${npmEngines})`)
+}
+
 cpSync(nodeSrc, join(out, nodeName))
 console.log(`[bundle:resources] node ${nodeName} <- ${nodeSrc}`)

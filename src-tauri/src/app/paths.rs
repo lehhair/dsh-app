@@ -249,13 +249,27 @@ fn resolve_runtime(res: &Path, proj: &Path, user: &Path, managed_only: bool) -> 
   if let Ok(env_dir) = std::env::var("DSH_RUNTIME") {
     return (PathBuf::from(env_dir), false);
   }
-  if let Some(global) = global_npm_root() {
+  if let Some(global) = global_npm_root_cached() {
     if global.join("@deepseek-ai/dsh/lib/bin.js").exists() {
       return (global, false);
     }
   }
   // Nothing found — point at the bundled path so spawn errors are descriptive.
   (bundled_res, false)
+}
+
+/// `global_npm_root`, caching successes: the fallback spawns `npm root -g`
+/// (a cmd.exe round trip on Windows) and Paths::resolve runs once per
+/// command. Only Some is cached — a None re-probes, so a dsh installed
+/// mid-session (`npm i -g`) is still picked up without an app restart.
+fn global_npm_root_cached() -> Option<PathBuf> {
+  static CACHE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+  if let Some(root) = CACHE.get() {
+    return Some(root.clone());
+  }
+  let root = global_npm_root()?;
+  let _ = CACHE.set(root.clone());
+  Some(root)
 }
 
 /// The user's global npm node_modules dir (`npm root -g`), used by the
