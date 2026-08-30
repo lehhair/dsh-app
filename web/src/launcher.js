@@ -235,17 +235,60 @@ autoLocalToggle.addEventListener('click', async () => {
   autoLocalToggle.setAttribute('aria-checked', String(on))
 })
 
+// ---- collapsible 更多 (版本与源) ----
+// Low-frequency settings live behind a fold; the toggle row shows a
+// version · registry summary so the state stays visible while collapsed.
+// An available update auto-expands the fold once and tints the summary.
+const moreToggle = document.getElementById('more-toggle')
+const moreGroup = document.getElementById('more-group')
+const moreSummary = document.getElementById('more-summary')
+let summaryVersion = ''
+let summaryRegistry = ''
+let moreAttentionText = null // e.g. 发现新版本 v… — replaces the summary
+
+function renderMoreSummary() {
+  if (moreAttentionText) {
+    moreSummary.textContent = moreAttentionText
+    moreSummary.classList.add('attention')
+  } else {
+    moreSummary.textContent = [summaryVersion, summaryRegistry].filter(Boolean).join(' · ')
+    moreSummary.classList.remove('attention')
+  }
+}
+
+function setMoreOpen(open, persist = true) {
+  moreGroup.hidden = !open
+  moreToggle.setAttribute('aria-expanded', String(open))
+  if (persist) {
+    try { localStorage.setItem('dsh-more-open', open ? '1' : '0') } catch (_e) {}
+  }
+}
+moreToggle.addEventListener('click', () => setMoreOpen(moreGroup.hidden))
+try {
+  if (localStorage.getItem('dsh-more-open') === '1') setMoreOpen(true, false)
+} catch (_e) {}
+
+function flagUpdateAvailable(text) {
+  moreAttentionText = text
+  setMoreOpen(true, false) // surface the update; don't overwrite the user's fold preference
+  renderMoreSummary()
+}
+
 // ---- embedded dsh self-update ----
 const dshVersionEl = document.getElementById('dsh-version')
 const checkUpdateBtn = document.getElementById('check-update')
 const doUpdateBtn = document.getElementById('do-update')
+const updateRow = document.getElementById('dsh-update-row')
+const updateText = document.getElementById('dsh-update-text')
 let pendingUpdate = null // { latest } once an update is available
 
-// Status feedback replaces the version text in the meta row (the version
-// slot itself), colored by outcome; a plain version shows default tertiary ink.
+// The version row shows only the installed version; check/install/update
+// feedback lives in its own status row below it, colored by outcome.
 function setUpdateStatus(text, kind) {
-  dshVersionEl.textContent = text
-  dshVersionEl.className = `version ${kind ?? ''}`
+  updateRow.hidden = !text
+  if (!text) return
+  updateText.textContent = text
+  updateText.className = `update-text ${kind ?? ''}`
 }
 
 bridge.onUpdateLog((line) => {
@@ -261,9 +304,10 @@ async function renderDshVersion() {
   if (!external && !v) {
     dshVersionEl.textContent = '未安装'
     checkUpdateBtn.textContent = '安装 dsh'
-    doUpdateBtn.hidden = true
+    summaryVersion = '未安装'
   } else if (external && !v) {
     dshVersionEl.textContent = '未找到全局 dsh（npm i -g @deepseek-ai/dsh）'
+    summaryVersion = '未安装'
     // Surface the resolution chain so a failing probe is visible instead of
     // a bare hint — put it in the boot log area for easy copy-paste.
     const diag = await bridge.diagnose().catch(() => null)
@@ -274,8 +318,9 @@ async function renderDshVersion() {
   } else {
     dshVersionEl.textContent = `v${v}`
     checkUpdateBtn.textContent = '检查更新'
+    summaryVersion = `v${v}`
   }
-  dshVersionEl.className = 'version'
+  renderMoreSummary()
 }
 
 // ---- launcher self-update (GitHub Releases) ----
@@ -288,8 +333,9 @@ async function checkLauncherUpdate() {
   try {
     const r = await bridge.checkLauncherUpdate()
     if (r && r.updateAvailable) {
-      launcherUpdateLabel.textContent = `启动器 v${r.version} 可用`
+      launcherUpdateLabel.textContent = `v${r.version} 可用`
       launcherUpdateRow.hidden = false
+      flagUpdateAvailable(`启动器 v${r.version} 可用`)
       launcherUpdateBtn.addEventListener('click', async () => {
         launcherUpdateBtn.disabled = true
         launcherUpdateBtn.textContent = '正在下载更新…'
@@ -347,7 +393,8 @@ checkUpdateBtn.addEventListener('click', async () => {
     }
     return
   }
-  setUpdateStatus('正在检查更新…')
+  setUpdateStatus('正在检查更新…', null)
+  doUpdateBtn.hidden = true
   try {
     const r = await bridge.checkUpdate()
     if (!r) {
@@ -355,11 +402,12 @@ checkUpdateBtn.addEventListener('click', async () => {
     } else if (r.updateAvailable) {
       pendingUpdate = r
       setUpdateStatus(`发现新版本 v${r.latest}（当前 v${r.current}）`, 'ok')
+      doUpdateBtn.textContent = `更新到 v${r.latest}`
       doUpdateBtn.hidden = false
+      flagUpdateAvailable(`发现新版本 v${r.latest}`)
     } else {
       pendingUpdate = null
       setUpdateStatus(`已是最新版本 v${r.current}`, 'ok')
-      doUpdateBtn.hidden = true
     }
   } finally {
     checkUpdateBtn.disabled = false
@@ -378,6 +426,8 @@ doUpdateBtn.addEventListener('click', async () => {
       setUpdateStatus(`已更新至 v${r.version}`, 'ok')
       doUpdateBtn.hidden = true
       pendingUpdate = null
+      moreAttentionText = null
+      renderDshVersion() // the version row must follow the new install
     } else if (r.error === '已取消') {
       setUpdateStatus('已取消更新', 'err')
     } else {
@@ -603,29 +653,52 @@ const registryForm = document.getElementById('registry-form')
 const registryCustom = document.getElementById('registry-custom')
 const registryError = document.getElementById('registry-error')
 
+const REGISTRY_PRESETS = [
+  { url: 'https://registry.npmjs.org/', name: 'npm 官方源' },
+  { url: 'https://registry.npmmirror.com', name: 'npmmirror 国内镜像' },
+]
+const normRegistry = (url) => (url || '').trim().replace(/\/+$/, '')
+const registryHost = (url) => {
+  try {
+    return new URL(url).host
+  } catch (_e) {
+    return url
+  }
+}
+
 async function renderRegistry() {
   const r = await bridge.registry.get().catch(() => null)
   if (!r) {
-    registryLabel.textContent = 'npm 源：读取失败'
+    registryLabel.textContent = '读取失败'
+    registryLabel.title = ''
     return
   }
-  registryLabel.textContent = `npm 源：${r.registry}`
-  registryLabel.title = r.registry === r.default ? '官方源' : '镜像源'
+  const current = normRegistry(r.registry)
+  const preset = REGISTRY_PRESETS.find((p) => normRegistry(p.url) === current)
+  registryLabel.textContent = preset ? preset.name : registryHost(r.registry)
+  registryLabel.title = r.registry
+  summaryRegistry = registryLabel.textContent
+  renderMoreSummary()
+  // Ring the option matching the effective registry (custom URLs ring none).
+  registryForm.querySelectorAll('[data-registry]').forEach((btn) => {
+    btn.classList.toggle('selected', normRegistry(btn.dataset.registry) === current)
+  })
 }
 
 async function saveRegistry(url) {
-  registryError.textContent = ''
+  registryError.hidden = true
   try {
     await bridge.registry.set(url)
     registryForm.hidden = true
     renderRegistry()
   } catch (e) {
     registryError.textContent = e || '保存失败'
+    registryError.hidden = false
   }
 }
 
 document.getElementById('registry-edit').addEventListener('click', () => {
-  registryError.textContent = ''
+  registryError.hidden = true
   registryCustom.value = ''
   registryForm.hidden = !registryForm.hidden
 })
@@ -639,6 +712,7 @@ document.getElementById('registry-save').addEventListener('click', () => {
   const url = registryCustom.value.trim()
   if (!url) {
     registryError.textContent = '请输入源地址'
+    registryError.hidden = false
     return
   }
   saveRegistry(url)
@@ -646,6 +720,8 @@ document.getElementById('registry-save').addEventListener('click', () => {
 
 // ---- platform adaptation ----
 bridge.appInfo().then((info) => {
+  const appVersion = document.getElementById('app-version')
+  if (appVersion) appVersion.textContent = `启动器 v${info.version}`
   document.body.classList.add(info.desktop ? 'desktop' : 'mobile')
   // macOS: the window keeps native traffic lights (Overlay titlebar) — the
   // CSS pads the strip and hides the custom window buttons.

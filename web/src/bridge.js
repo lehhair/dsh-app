@@ -1,15 +1,20 @@
 // Bridge over the Tauri IPC — the dshShell equivalent for the bundled
-// frontend. Every call maps 1:1 to a Rust `#[tauri::command]`.
+// frontend. Every call maps 1:1 to a Rust `#[tauri::command]`. Outside the
+// app (plain browser preview of web/dist) the mock bridge stands in so the
+// UI stays fully reviewable.
 
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { mockBridge } from './mock.js'
+
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 async function on(channel, callback) {
   return listen(channel, (event) => callback(event.payload))
 }
 
-export const bridge = {
+const realBridge = {
   // platform info from Rust (mobile hides the desktop-only chrome)
   appInfo: () => invoke('app_info'),
   // status-bar inset in CSS px (mobile)
@@ -97,3 +102,5 @@ export const bridge = {
     },
   },
 }
+
+export const bridge = isTauri ? realBridge : mockBridge
