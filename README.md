@@ -29,6 +29,12 @@ npm run build:external
   下载后先按 release 资产的 **sha256 digest**（GitHub 服务端计算）校验，不一致即中止。
 - 内置版的 dsh 运行时更新走应用内「检查更新」（npm 更新 resources/.dsh-runtime）。
 
+## 日志
+
+- 运行日志：`%LOCALAPPDATA%/com.dshapp.app/logs/dsh-app.log`（Windows），其他平台在
+  标准应用日志目录（tauri-plugin-log 的 LogDir）。启动耗时看 `[shell] ready in …` 行。
+  排查「启动失败」类问题请先附这个文件。
+
 ## 跨平台（Windows / macOS / Linux）
 
 - 每个平台在**各自的操作系统上构建**（`build:bundled` / `build:external` 同上），

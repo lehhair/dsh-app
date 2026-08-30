@@ -389,6 +389,7 @@ pub async fn shell_new_window(app: AppHandle, webview: Webview) -> Result<serde_
 /// white flash, the OpenCodeUI mark-window-ready model).
 #[tauri::command]
 pub fn shell_ready(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  log::info!("[shell] ready in {:?}", crate::app::launch_start().elapsed());
   let win_label = windows::label_of(&webview);
   if let Some(window) = app.get_window(&win_label) {
     let _ = window.show();

@@ -63,11 +63,8 @@ mod imp {
     }
 
     fn write(&self, doc: &Value) {
-      if let Some(parent) = self.file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-      }
       if let Ok(text) = serde_json::to_string_pretty(doc) {
-        let _ = std::fs::write(&self.file, text);
+        let _ = crate::app::store::write_atomic(&self.file, &text);
       }
     }
 

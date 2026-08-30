@@ -277,12 +277,20 @@ fn exited(receiver: &mut oneshot::Receiver<Option<i32>>) -> bool {
   }
 }
 
+/// Shared health-probe client: building a fresh client (TLS init) per 500ms
+/// boot-loop tick is wasted work.
+fn health_client() -> &'static reqwest::Client {
+  static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+  CLIENT.get_or_init(|| {
+    reqwest::Client::builder()
+      .timeout(Duration::from_secs(2))
+      .build()
+      .unwrap_or_default()
+  })
+}
+
 async fn is_healthy(url: &str) -> bool {
-  let client = reqwest::Client::builder()
-    .timeout(Duration::from_secs(2))
-    .build()
-    .unwrap_or_default();
-  matches!(client.get(url).send().await, Ok(response) if response.status() == reqwest::StatusCode::OK)
+  matches!(health_client().get(url).send().await, Ok(response) if response.status() == reqwest::StatusCode::OK)
 }
 
 fn pick_free_port() -> std::io::Result<u16> {

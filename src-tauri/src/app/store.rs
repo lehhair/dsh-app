@@ -4,7 +4,20 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Write `text` to `path` atomically (sibling tmp file + rename): a crash or
+/// power loss mid-write must never leave a truncated JSON that silently
+/// loses every saved instance / setting on the next launch.
+pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+  if let Some(parent) = path.parent() {
+    std::fs::create_dir_all(parent)?;
+  }
+  let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("data");
+  let tmp = path.with_file_name(format!(".{name}.tmp"));
+  std::fs::write(&tmp, text)?;
+  std::fs::rename(&tmp, path)
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Instance {
@@ -53,11 +66,10 @@ impl Store {
 
   fn write_json(&self, name: &str, value: &Value) {
     let file = self.file(name);
-    if let Some(parent) = file.parent() {
-      let _ = std::fs::create_dir_all(parent);
-    }
     if let Ok(text) = serde_json::to_string_pretty(value) {
-      let _ = std::fs::write(file, text);
+      if let Err(e) = write_atomic(&file, &text) {
+        log::error!("[store] write {name} failed: {e}");
+      }
     }
   }
 
@@ -152,4 +164,20 @@ fn valid_instance_url(url: &str) -> bool {
     .or_else(|| url.strip_prefix("https://"))
     .unwrap_or("");
   !rest.is_empty() && !rest.contains('/')
+}
+
+#[cfg(test)]
+mod tests {
+  #[test]
+  fn write_atomic_creates_and_replaces() {
+    let dir = std::env::temp_dir().join(format!("dsh-app-test-store-{}", uuid::Uuid::new_v4()));
+    let file = dir.join("shell.json");
+    super::write_atomic(&file, "{\"a\":1}").unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"a\":1}");
+    // Replace over an existing file, and never leave the tmp sibling behind.
+    super::write_atomic(&file, "{\"a\":2}").unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"a\":2}");
+    assert!(!dir.join(".shell.json.tmp").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+  }
 }

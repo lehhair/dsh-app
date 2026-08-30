@@ -160,18 +160,18 @@ fn materialize_overlay(user: &Path) -> PathBuf {
 
   if !has_content {
     // Missing, deleted, or an invalid comment-only stub — write the default.
-    let _ = std::fs::write(&path, EMBEDDED_OVERLAY);
-    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
+    let _ = crate::app::store::write_atomic(&path, EMBEDDED_OVERLAY);
+    let _ = crate::app::store::write_atomic(&snapshot, EMBEDDED_OVERLAY);
   } else if existing == EMBEDDED_OVERLAY {
     // Already the current default — nothing to refresh, align the snapshot.
-    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
+    let _ = crate::app::store::write_atomic(&snapshot, EMBEDDED_OVERLAY);
   } else if existing == last_default {
     // Untouched previous default; an update changed it — adopt the new one.
-    let _ = std::fs::write(&path, EMBEDDED_OVERLAY);
-    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
+    let _ = crate::app::store::write_atomic(&path, EMBEDDED_OVERLAY);
+    let _ = crate::app::store::write_atomic(&snapshot, EMBEDDED_OVERLAY);
   } else {
     // User-customized file — keep it, just record the new default baseline.
-    let _ = std::fs::write(&snapshot, EMBEDDED_OVERLAY);
+    let _ = crate::app::store::write_atomic(&snapshot, EMBEDDED_OVERLAY);
   }
   path
 }

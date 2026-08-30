@@ -17,8 +17,28 @@ use store::Store;
 use tauri::Manager;
 use windows::Windows;
 
+/// Process start time, for the launch-duration log line in `shell_ready`.
+pub fn launch_start() -> &'static std::time::Instant {
+  static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+  START.get_or_init(std::time::Instant::now)
+}
+
 pub fn run() {
+  let _ = launch_start(); // start the clock before anything else
   let builder = tauri::Builder::default()
+    .plugin(
+      tauri_plugin_log::Builder::new()
+        // Without this every log::info!/error! in the app is a silent no-op.
+        // Logdir gives users a file to attach when reporting boot failures.
+        .level(log::LevelFilter::Info)
+        .targets([
+          tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+          tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+            file_name: Some("dsh-app".into()),
+          }),
+        ])
+        .build(),
+    )
     .manage(Windows::default())
     .manage(DshService::default());
 
@@ -116,6 +136,7 @@ pub fn run() {
         // crash leaks an instance that keeps running — the accumulating load
         // and port pressure eventually trip the 90s boot health timeout.
         cleanup_stale_embedded();
+        cleanup_stale_updater_files();
         run_startup_flows(app.handle());
       }
       Ok(())
@@ -220,6 +241,25 @@ fn run_startup_flows(app: &tauri::AppHandle) {
       }
     }
   }
+
+/// Delete self-update leftovers next to the exe (`dsh-app.exe.new`,
+/// `dsh-app-update.cmd`) — a failed or interrupted update would otherwise
+/// leave them forever.
+#[cfg(desktop)]
+fn cleanup_stale_updater_files() {
+  #[cfg(windows)]
+  {
+    if let Ok(exe) = std::env::current_exe() {
+      if let Some(dir) = exe.parent() {
+        for stale in ["dsh-app.exe.new", "dsh-app-update.cmd"] {
+          if std::fs::remove_file(dir.join(stale)).is_ok() {
+            log::info!("[update] removed stale updater file: {stale}");
+          }
+        }
+      }
+    }
+  }
+}
 
 /// Kill embedded dsh node processes from earlier shell sessions (see the
 /// call site in `setup`). Runs synchronously before any fresh start: a
