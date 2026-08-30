@@ -25,7 +25,6 @@ fn main() {
     "shell_ready",
     "open_devtools",
     "view_reload",
-    "remote_disconnect",
     "remote_list",
     "remote_save",
     "remote_remove",
@@ -39,6 +38,8 @@ fn main() {
     "settings_set_restore",
     "settings_get_auto_local",
     "settings_set_auto_local",
+    "registry_get",
+    "registry_set",
     "theme_changed",
   ]);
   tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
