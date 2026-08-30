@@ -283,12 +283,92 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
   Ok(UpdateResult { ok: true, version: installed, error: None })
 }
 
-/// `npm ci` from the shipped lockfile seed, when both the bundled npm and
-/// the seed exist. Resolving dsh's ~250 same-version cross-linked packages
-/// from scratch pegs one core for 10+ minutes; with the seed's lockfile the
-/// same install takes seconds (npm's replace-registry-host rewrites the
-/// locked npmjs.org URLs to the user's configured mirror).
-fn seed_ci_command(app: &AppHandle, paths: &Paths, target: &std::path::Path) -> Option<Command> {
+/// `npm ci` in `target` with the bundled node/npm (seed files already in place).
+fn npm_ci(paths: &Paths, target: &std::path::Path) -> Command {
+  let mut command = Command::new(&paths.node_exe);
+  command
+    .arg(&paths.npm_cli)
+    .args(["ci", "--no-audit", "--no-fund", "--loglevel", "error"])
+    .current_dir(target);
+  command
+}
+
+/// The dsh version a seed lockfile pins, if it is a plausible seed at all —
+/// the minimal validation before trusting a downloaded lock with an install.
+fn seed_lock_version(bytes: &[u8]) -> Option<String> {
+  let json: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+  json
+    .get("packages")?
+    .get("node_modules/@deepseek-ai/dsh")?
+    .get("version")?
+    .as_str()
+    .map(str::to_string)
+}
+
+/// Fetch the freshest seed from the latest GitHub release (the daily
+/// update-seed workflow keeps it on the newest dsh), so even an OLD launcher
+/// installs the latest dsh on first use — no launcher update required.
+/// Any failure (offline, blocked, asset missing) returns None and the caller
+/// falls back to the seed baked into this installer.
+async fn fetch_latest_seed(target: &std::path::Path) -> Option<String> {
+  let (owner, repo) = (
+    std::env::var("DSH_UPDATE_OWNER").unwrap_or_else(|_| "lehhair".into()),
+    std::env::var("DSH_UPDATE_REPO").unwrap_or_else(|_| "dsh-app".into()),
+  );
+  let client = reqwest::Client::builder()
+    .user_agent("dsh-app")
+    .timeout(std::time::Duration::from_secs(15))
+    .build()
+    .ok()?;
+  let release_text = client
+    .get(format!("https://api.github.com/repos/{owner}/{repo}/releases/latest"))
+    .send()
+    .await
+    .ok()?
+    .error_for_status()
+    .ok()?
+    .text()
+    .await
+    .ok()?;
+  let release: serde_json::Value = serde_json::from_str(&release_text).ok()?;
+  let assets = release.get("assets")?.as_array()?;
+  let asset_url = |name: &str| {
+    assets
+      .iter()
+      .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(name))
+      .and_then(|a| a.get("browser_download_url").and_then(|u| u.as_str()))
+      .map(str::to_string)
+  };
+  let mut version = None;
+  for (asset, file) in [
+    ("dsh-runtime-seed-package.json", "package.json"),
+    ("dsh-runtime-seed-package-lock.json", "package-lock.json"),
+  ] {
+    let bytes = client
+      .get(asset_url(asset)?)
+      .send()
+      .await
+      .ok()?
+      .error_for_status()
+      .ok()?
+      .bytes()
+      .await
+      .ok()?;
+    if file == "package-lock.json" {
+      version = Some(seed_lock_version(&bytes)?);
+    } else {
+      // package.json must at least parse.
+      let _: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    }
+    let text = String::from_utf8(bytes.to_vec()).ok()?;
+    crate::app::store::write_atomic(&target.join(file), &text).ok()?;
+  }
+  version
+}
+
+/// `npm ci` from the seed baked into this installer, when both the bundled
+/// npm and the seed exist.
+fn baked_seed_ci_command(app: &AppHandle, paths: &Paths, target: &std::path::Path) -> Option<Command> {
   if !paths.npm_cli.exists() {
     return None;
   }
@@ -306,12 +386,7 @@ fn seed_ci_command(app: &AppHandle, paths: &Paths, target: &std::path::Path) -> 
   .find(|p| p.join("package-lock.json").exists())?;
   std::fs::copy(seed.join("package.json"), target.join("package.json")).ok()?;
   std::fs::copy(seed.join("package-lock.json"), target.join("package-lock.json")).ok()?;
-  let mut command = Command::new(&paths.node_exe);
-  command
-    .arg(&paths.npm_cli)
-    .args(["ci", "--no-audit", "--no-fund", "--loglevel", "error"])
-    .current_dir(target);
-  Some(command)
+  Some(npm_ci(paths, target))
 }
 
 /// Install (or reinstall) the latest dsh into the user-data runtime dir the
@@ -334,15 +409,22 @@ pub async fn install_dsh(app: &AppHandle) -> Result<UpdateResult, String> {
   notify("正在安装 @deepseek-ai/dsh（最新版）…");
 
   let paths = Paths::resolve(app);
-  let command = match seed_ci_command(app, &paths, &target) {
-    Some(command) => {
-      notify("使用内置锁文件快速安装…");
-      command
-    }
-    None => {
-      ensure_package_json(&target)?;
-      install_command(&paths, "latest", Some(&target))
-    }
+  // Freshness order: today's seed from the latest GitHub release (kept on
+  // the newest dsh by the update-seed workflow — no launcher update needed)
+  // → the seed baked into this installer → a plain (slow) npm install. All
+  // fast paths need the bundled npm CLI.
+  let command = if !paths.npm_cli.exists() {
+    ensure_package_json(&target)?;
+    install_command(&paths, "latest", Some(&target))
+  } else if let Some(version) = fetch_latest_seed(&target).await {
+    notify(&format!("使用在线锁文件快速安装（v{version}）…"));
+    npm_ci(&paths, &target)
+  } else if let Some(command) = baked_seed_ci_command(app, &paths, &target) {
+    notify("使用内置锁文件快速安装…");
+    command
+  } else {
+    ensure_package_json(&target)?;
+    install_command(&paths, "latest", Some(&target))
   };
   match run_install(app, &service, command).await? {
     InstallOutcome::Cancelled => {
@@ -412,6 +494,18 @@ pub fn compare_versions(a: &str, b: &str) -> i32 {
         -1
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod seed_tests {
+  #[test]
+  fn seed_lock_version_reads_pinned_dsh() {
+    let lock = br#"{"packages":{"node_modules/@deepseek-ai/dsh":{"version":"0.1.1-rc.2"}}}"#;
+    assert_eq!(super::seed_lock_version(lock), Some("0.1.1-rc.2".into()));
+    assert_eq!(super::seed_lock_version(br#"{"packages":{}}"#), None);
+    assert_eq!(super::seed_lock_version(b"not json"), None);
+    assert_eq!(super::seed_lock_version(b""), None);
   }
 }
 

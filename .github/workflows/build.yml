@@ -225,6 +225,11 @@ jobs:
             esac
             cp "$f" "out/$name"
           done
+          # the on-demand 安装 dsh fetches the freshest seed from the release
+          # (refreshed daily by the update-seed workflow) — old launchers then
+          # install the latest dsh without a launcher update
+          cp seed/dsh-runtime/package.json out/dsh-runtime-seed-package.json
+          cp seed/dsh-runtime/package-lock.json out/dsh-runtime-seed-package-lock.json
           # GitHub rejects zero-byte release assets ("size must be greater
           # than or equal to 1") — drop any stragglers
           find out -type f -size 0 -delete
