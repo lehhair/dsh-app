@@ -24,6 +24,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 cookie = "0.18"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
 log = "0.4"
 
 # OS-keychain secrets on desktop; mobile stores keys in the plain JSON store.

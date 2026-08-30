@@ -159,6 +159,10 @@ pub struct LauncherUpdateInfo {
   pub url: Option<String>,
   pub size: Option<u64>,
   pub notes: Option<String>,
+  /// GitHub's server-computed asset digest ("sha256:…"), verified against
+  /// the downloaded bytes before the swap — the exe we run must be the exe
+  /// the release metadata points at.
+  pub sha256: Option<String>,
 }
 
 /// Update channel: `DSH_UPDATE_OWNER` / `DSH_UPDATE_REPO` override the
@@ -178,6 +182,7 @@ pub async fn check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo,
     url: None,
     size: None,
     notes: None,
+    sha256: None,
   };
   let (owner, repo) = launcher_repo();
   if owner.is_empty() || repo.is_empty() {
@@ -239,17 +244,31 @@ pub async fn check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo,
     .ok_or("发布资产中没有找到 exe 下载")?;
   let size = asset.and_then(|a| a.get("size").and_then(|s| s.as_u64()));
   let notes = json.get("body").and_then(|b| b.as_str()).map(str::to_string);
+  // GitHub computes a sha256 digest for every release asset server-side
+  // ("sha256:<hex>"); absent only for very old assets.
+  let sha256 = asset
+    .and_then(|a| a.get("digest").and_then(|d| d.as_str()))
+    .and_then(|d| d.strip_prefix("sha256:"))
+    .map(str::to_string);
   Ok(LauncherUpdateInfo {
     update_available: true,
     version: Some(latest.to_string()),
     url: Some(url),
     size,
     notes,
+    sha256,
   })
 }
 
+/// Lowercase hex SHA-256 of `bytes`.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+  use sha2::Digest;
+  let digest = sha2::Sha256::digest(bytes);
+  digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[tauri::command]
-pub async fn launcher_update(app: AppHandle, url: String) -> Result<serde_json::Value, String> {
+pub async fn launcher_update(app: AppHandle, url: String, sha256: Option<String>) -> Result<serde_json::Value, String> {
   let exe = std::env::current_exe().map_err(|e| format!("无法定位程序路径：{e}"))?;
   let dir = exe.parent().ok_or("程序路径异常")?.to_path_buf();
   let new_path = dir.join("dsh-app.exe.new");
@@ -268,6 +287,20 @@ pub async fn launcher_update(app: AppHandle, url: String) -> Result<serde_json::
   let bytes = resp.bytes().await.map_err(|e| format!("下载失败：{e}"))?;
   if bytes.is_empty() {
     return Err("下载内容为空".into());
+  }
+  // Verify the download against the digest from the release metadata before
+  // anything is written — a corrupted or swapped asset must never replace
+  // the running exe.
+  match &sha256 {
+    Some(expected) => {
+      let actual = sha256_hex(&bytes);
+      if !actual.eq_ignore_ascii_case(expected) {
+        return Err(format!("更新文件校验失败（期望 sha256 {expected}，实际 {actual}）"));
+      }
+    }
+    None => {
+      log::warn!("[update] release asset has no digest — installing WITHOUT integrity verification");
+    }
   }
   std::fs::write(&new_path, &bytes).map_err(|e| format!("写入更新文件失败：{e}"))?;
 
@@ -558,4 +591,20 @@ pub fn theme_changed(app: AppHandle, tokens: HashMap<String, String>) -> Result<
   *app.state::<windows::Windows>().last_theme.lock().unwrap() = Some(tokens.clone());
   let _ = app.emit("theme:sync", tokens);
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  #[test]
+  fn sha256_hex_matches_known_vector() {
+    // NIST test vector for the empty input and "abc".
+    assert_eq!(
+      super::sha256_hex(b""),
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+      super::sha256_hex(b"abc"),
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+  }
 }

@@ -294,7 +294,7 @@ async function checkLauncherUpdate() {
         launcherUpdateBtn.disabled = true
         launcherUpdateBtn.textContent = '正在下载更新…'
         try {
-          await bridge.launcherUpdate(r.url)
+          await bridge.launcherUpdate(r.url, r.sha256 ?? null)
           // The app swaps its own exe and relaunches; nothing to do here.
         } catch (e) {
           launcherUpdateBtn.disabled = false

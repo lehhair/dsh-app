@@ -26,6 +26,7 @@ npm run build:external
   `vX.Y.Z`，资产含 `.exe`）时显示「更新启动器」按钮；下载、替换 exe、自动重启，
   只更新启动器本体，不重下 dsh 运行时。默认检查 `lehhair/dsh-app`，可用环境变量
   `DSH_UPDATE_OWNER` / `DSH_UPDATE_REPO` 指向其他仓库（设为空则关闭）。
+  下载后先按 release 资产的 **sha256 digest**（GitHub 服务端计算）校验，不一致即中止。
 - 内置版的 dsh 运行时更新走应用内「检查更新」（npm 更新 resources/.dsh-runtime）。
 
 ## 跨平台（Windows / macOS / Linux）

@@ -31,7 +31,7 @@ export const bridge = {
   onUpdateLog: (callback) => on('dsh:update-log', callback),
   // launcher self-update (GitHub Releases)
   checkLauncherUpdate: () => invoke('check_launcher_update'),
-  launcherUpdate: (url) => invoke('launcher_update', { url }),
+  launcherUpdate: (url, sha256) => invoke('launcher_update', { url, sha256 }),
   onExited: (callback) => on('local:exited', callback),
   onBacked: (callback) => on('shell:backed', callback),
 

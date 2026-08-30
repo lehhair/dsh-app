@@ -100,6 +100,12 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     command.creation_flags(CREATE_NO_WINDOW);
   }
+  #[cfg(unix)]
+  {
+    // Own process group (leader) so kill_tree can SIGKILL the whole group —
+    // dsh's children must not outlive it. Windows uses taskkill /T instead.
+    command.process_group(0);
+  }
 
   let mut child = command
     .spawn()
@@ -299,8 +305,10 @@ pub fn kill_tree(pid: u32) {
   }
   #[cfg(not(windows))]
   {
+    // Negative pid = the whole process group (the child is its leader, set
+    // at spawn). A bare `kill pid` would orphan dsh's children.
     let _ = std::process::Command::new("kill")
-      .args(["-9", &pid.to_string()])
+      .args(["-9", "--", &format!("-{pid}")])
       .stdin(std::process::Stdio::null())
       .stdout(std::process::Stdio::null())
       .stderr(std::process::Stdio::null())
