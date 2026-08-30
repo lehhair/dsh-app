@@ -44,7 +44,12 @@ jobs:
 
       - name: Run Rust unit tests
         working-directory: src-tauri
-        run: cargo test
+        # tauri-build's generate_context! requires frontendDist to exist —
+        # build the web bundle first (beforeBuildCommand only runs for
+        # `tauri build`, not for a bare cargo invocation).
+        run: |
+          npm run build:web --prefix ..
+          cargo test
 
       - name: Build external flavor
         shell: bash
