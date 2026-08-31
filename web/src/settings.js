@@ -234,6 +234,13 @@ renderInstances()
 // dialog is shown again; while hidden, state changes arrive via events
 // (no polling from a hidden page).
 bridge.onSettingsRefresh(() => {
+  // A hidden view never fires mouseleave, so buttons keep a stale :hover
+  // from whatever was pressed to close the dialog last time. Toggle
+  // pointer-events on every show to make Chromium drop it.
+  for (const el of document.querySelectorAll('button:hover')) {
+    el.style.pointerEvents = 'none'
+    requestAnimationFrame(() => { el.style.pointerEvents = '' })
+  }
   renderCurrent()
   renderLocal()
   renderInstances()

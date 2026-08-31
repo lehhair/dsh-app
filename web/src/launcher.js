@@ -616,6 +616,12 @@ function openRowEdit(edit, inst) {
 
 // settings opens the settings dialog (desktop overlay)
 settingsBtn.addEventListener('click', async () => {
+  // The settings overlay covers the WHOLE window (titlebar included), so
+  // this button never receives a mouseleave and its :hover would stick
+  // after the dialog closes. Toggling pointer-events forces Chromium to
+  // re-run hit-testing and drop the stale hover immediately.
+  settingsBtn.style.pointerEvents = 'none'
+  requestAnimationFrame(() => { settingsBtn.style.pointerEvents = '' })
   try {
     await bridge.settings.open()
   } catch (e) {
