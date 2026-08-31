@@ -189,8 +189,13 @@
          the content below the real inset (read natively; WebView < 140 lies
          about env(safe-area-inset-*)). The page itself does not scroll: only
          the node list does — the hero + 远程节点 header + search stay fixed. */
-      body.mobile .content { padding-top: calc(var(--safe-area-inset-top, 0px) + 24px); overflow: hidden; }
-      body.mobile .page { height: 100%; min-height: 0; }
+      /* Mobile: normal viewports behave like before — the page is exactly
+         viewport-tall and only the node list scrolls. When the soft keyboard
+         shrinks the viewport (Android adjustResize), a locked no-scroll
+         layout would SQUEEZE/clip the header and the add form; instead the
+         page grows past the viewport and the whole thing scrolls. */
+      body.mobile .content { padding-top: calc(var(--safe-area-inset-top, 0px) + 24px); overflow-y: auto; }
+      body.mobile .page { height: auto; min-height: 100%; }
       /* Mobile: the desktop min-height floor would overflow short viewports
          (content is overflow:hidden — the excess gets CLIPPED). flex:1 +
          min-height:0 fills exactly what the screen offers. The bottom
@@ -227,6 +232,8 @@
         display: flex;
         flex-direction: column;
       }
+      /* hero 不被软键盘压缩 */
+      .page > .hero { flex: none; }
       .hero h1 { font-size: 20px; font-weight: 500; margin: 14px 0 6px; color: var(--shell-fg); }
       .section { padding: 16px 0; border-top: 1px solid var(--shell-border); flex: none; }
 
@@ -256,8 +263,15 @@
       }
       .section.remote > .row-title,
       .section.remote > .meta,
-      .section.remote > .search-wrap,
+      .section.remote > .search,
+      .section.remote > #remote-error,
       .section.remote > .remote-form { flex: none; }
+      /* 空错误行不占间距（此前空着也吃 8px margin，搜索框与上方说明的
+         间距因此多出一截；有内容时仍保留间距并不被软键盘挤压） */
+      .section.remote > #remote-error { min-height: 0; margin: 0 0 8px; }
+      .section.remote > #remote-error:empty { margin-bottom: 0; }
+      /* 添加实例表单的错误行同理：空时不撑出 28px 死空白 */
+      #remote-form > .error:empty { min-height: 0; margin: 0; }
       .remote-list {
         flex: 1;
         min-height: 0;
@@ -804,7 +818,7 @@
         <section class="section remote">
           <div class="row-title">远程节点 <button id="remote-add" class="btn sm outline">添加实例</button></div>
           <p class="meta">连接远程 dsh（经网关，访问密钥注入）；可添加、保存、切换多个节点。</p>
-          <p class="error" id="remote-error" style="min-height:0;margin:0 0 8px"></p>
+          <p class="error" id="remote-error"></p>
           <span class="search">
             <span class="search-icon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg></span>
             <input id="remote-search" class="search-input" placeholder="搜索实例（名称 / 地址）" spellcheck="false" />
