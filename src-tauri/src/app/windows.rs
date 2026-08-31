@@ -126,8 +126,12 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
   #[cfg(not(desktop))]
   let mut builder = builder;
   match &bounds {
-    Some(b) => {
-      builder = builder.inner_size(b.width as f64, b.height as f64).position(b.x as f64, b.y as f64);
+    Some(_b) => {
+      // Geometry is applied AFTER build in physical units below — the
+      // builder's inner_size/position take LOGICAL px, but SavedBounds
+      // stores PHYSICAL px (outer_position/outer_size), and treating
+      // physical as logical scales the window up by the DPI factor on
+      // every restore (window grew / wandered each launch).
     }
     None => {
       #[cfg(desktop)]
@@ -142,8 +146,13 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
   }
   let window = builder.build().map_err(|e| e.to_string())?;
   #[cfg(desktop)]
-  if bounds.as_ref().map(|b| b.maximized).unwrap_or(false) {
-    let _ = window.maximize();
+  if let Some(b) = &bounds {
+    // SavedBounds is physical — apply it physically (DPI-scale agnostic).
+    let _ = window.set_size(tauri::PhysicalSize::new(b.width, b.height));
+    let _ = window.set_position(tauri::PhysicalPosition::new(b.x, b.y));
+    if b.maximized {
+      let _ = window.maximize();
+    }
   }
   let _ = &window;
 
@@ -330,7 +339,17 @@ pub fn save_window_state(window: &tauri::Window) {
   let Some(meta) = states.get(window.label()) else { return };
   let maximized = window.is_maximized().unwrap_or(false);
   let bounds = if maximized {
-    meta.last_bounds.lock().unwrap().clone()
+    // last_bounds holds the pre-maximize geometry — its `maximized` flag
+    // is false, which silently DROPPED the maximized state on every save.
+    // Force the flag; fall back to a sane geometry when the window was
+    // maximized from the start (no normal-bounds resize ever recorded).
+    meta
+      .last_bounds
+      .lock()
+      .unwrap()
+      .clone()
+      .map(|b| SavedBounds { maximized: true, ..b })
+      .or(Some(SavedBounds { x: 100, y: 100, width: 1440, height: 900, maximized: true }))
   } else if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
     if size.width >= 400 && size.height >= 300 {
       Some(SavedBounds {
