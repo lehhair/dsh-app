@@ -197,5 +197,18 @@ export const mockBridge = {
       check()
       return Promise.resolve(() => window.removeEventListener('resize', check))
     },
+    // Browser preview: there is no OS window — approximate window focus with
+    // document/tab focus (dim only when the whole page loses it).
+    isFocused: () => j(document.hasFocus()),
+    onFocusChanged: (callback) => {
+      const check = () => callback(document.hasFocus())
+      window.addEventListener('focus', check)
+      window.addEventListener('blur', check)
+      check()
+      return Promise.resolve(() => {
+        window.removeEventListener('focus', check)
+        window.removeEventListener('blur', check)
+      })
+    },
   },
 }

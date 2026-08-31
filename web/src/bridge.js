@@ -104,6 +104,17 @@ const realBridge = {
       update()
       return unlisten
     },
+    // WINDOW-level focus (OS activation), not document focus: the titlebar
+    // lives in the launcher webview while dsh content is a separate child
+    // webview, so document.hasFocus() goes false the instant the user clicks
+    // into the content — dimming the titlebar mid-work. These events only
+    // fire when the whole window is activated/deactivated (tauri://focus /
+    // tauri://blur, emitted on WindowEvent::Focused).
+    isFocused: () => getCurrentWindow().isFocused(),
+    onFocusChanged: (callback) => {
+      const win = getCurrentWindow()
+      return win.onFocusChanged(({ payload }) => callback(payload))
+    },
   },
 }
 

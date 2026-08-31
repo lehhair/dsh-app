@@ -821,11 +821,19 @@ bridge.shellReady().catch(() => {})
 // launcher is on screen (e.g. restore boot, or stop from another window).
 setInterval(refresh, 1500)
 
-// inactive-window dimming (mainstream title-bar behavior)
-const syncActive = () => document.body.classList.toggle('inactive', !document.hasFocus())
-window.addEventListener('focus', syncActive)
-window.addEventListener('blur', syncActive)
-syncActive()
+// inactive-window dimming (mainstream title-bar behavior). Keyed on OS
+// WINDOW focus, NOT document focus: with the multi-webview shell the
+// launcher's document loses focus whenever the user clicks the dsh content
+// view (a separate webview), which would dim the titlebar mid-work while the
+// window is plainly active. Window-level events (tauri://focus/blur) fire
+// only on real activation changes; isFocused() seeds the initial state.
+const setInactive = (focused) => {
+  if (typeof focused === 'boolean') {
+    document.body.classList.toggle('inactive', !focused)
+  }
+}
+bridge.window.isFocused().then(setInactive).catch(() => {})
+bridge.window.onFocusChanged(setInactive).catch(() => {})
 
 // F12 opens DevTools (debug builds), like the Electron app — never auto-open.
 window.addEventListener('keydown', (event) => {
