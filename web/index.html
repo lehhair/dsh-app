@@ -211,6 +211,8 @@
         min-height: 0;
         padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
       }
+      /* 手机上垂直空间宝贵：说明文字与搜索框的间距收紧（桌面 16px） */
+      body.mobile .section.remote > .meta { margin-bottom: 8px; }
       /* macOS: native traffic lights float at the top-left over this strip —
          pad the web controls clear of them and drop our own window buttons
          (the OS provides min/max/close). Windows/Linux keep the buttons. */
