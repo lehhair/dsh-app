@@ -178,6 +178,15 @@
          the node list does — the hero + 远程节点 header + search stay fixed. */
       body.mobile .content { padding-top: calc(var(--safe-area-inset-top, 0px) + 24px); overflow: hidden; }
       body.mobile .page { height: 100%; min-height: 0; }
+      /* Mobile: the desktop min-height floor would overflow short viewports
+         (content is overflow:hidden — the excess gets CLIPPED). flex:1 +
+         min-height:0 fills exactly what the screen offers. The bottom
+         padding grows by the gesture-bar inset so the last instance row
+         clears the system navigation area. */
+      body.mobile .section.remote {
+        min-height: 0;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+      }
       /* macOS: native traffic lights float at the top-left over this strip —
          pad the web controls clear of them and drop our own window buttons
          (the OS provides min/max/close). Windows/Linux keep the buttons. */

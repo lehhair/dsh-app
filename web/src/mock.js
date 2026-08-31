@@ -7,6 +7,12 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const j = (value) => Promise.resolve(structuredClone(value))
 const noop = () => Promise.resolve(() => {})
 
+// ?mobile=1 previews the phone layout: appInfo reports Android, the page
+// drops the local-instance section + titlebar, and a fake status-bar inset
+// is applied — pair it with the browser's device toolbar for the frame.
+const previewMobile =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).has('mobile')
+
 const state = {
   running: false,
   starting: false,
@@ -41,8 +47,14 @@ async function fakeInstall(target) {
 }
 
 export const mockBridge = {
-  appInfo: () => j({ desktop: true, version: '0.3.1', bundled: false, platform: 'windows' }),
-  statusBarHeight: () => j(0),
+  appInfo: () =>
+    j({
+      desktop: !previewMobile,
+      version: '0.3.1',
+      bundled: false,
+      platform: previewMobile ? 'android' : 'windows',
+    }),
+  statusBarHeight: () => j(previewMobile ? 24 : 0),
 
   startLocal: async () => {
     state.starting = true
