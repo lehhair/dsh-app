@@ -398,6 +398,15 @@ pub fn shell_ready(app: AppHandle, webview: Webview) -> Result<serde_json::Value
   Ok(serde_json::json!({ "ok": true }))
 }
 
+/// The name of the connection currently loading in this window (restore
+/// may begin before the launcher's listeners attach — the page queries on
+/// boot to decide whether to show the spinner overlay).
+#[tauri::command]
+pub fn shell_connecting(app: AppHandle, webview: Webview) -> Option<String> {
+  let win_label = windows::label_of(&webview);
+  windows::connecting_name(&app, &win_label)
+}
+
 /// Open DevTools for the invoking window (debug builds only; F12 from the
 /// shell page — the Electron app's behavior, no auto-open).
 #[tauri::command]

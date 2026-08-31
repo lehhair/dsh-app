@@ -583,6 +583,36 @@
 
       .hero .hero-version { font-size: 12px; color: var(--shell-fg-tertiary); margin: 0; }
 
+      /* connecting overlay: covers the launcher while a node view loads
+         (restore boot or a manual connect) — the view only appears once
+         the dsh page has rendered, so this spinner is what the user
+         watches instead of a white/black flash. */
+      .connecting-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: var(--shell-bg);
+      }
+      .connecting-overlay .chase { width: 30px; height: 30px; }
+      .connecting-overlay .chase rect {
+        fill: rgb(86, 134, 254);
+        opacity: 0.15;
+        animation: dsh-state-dot-chase 1s infinite;
+      }
+      .connecting-overlay .chase rect:nth-child(1) { animation-delay: -875ms; }
+      .connecting-overlay .chase rect:nth-child(2) { animation-delay: -750ms; }
+      .connecting-overlay .chase rect:nth-child(3) { animation-delay: -625ms; }
+      .connecting-overlay .chase rect:nth-child(4) { animation-delay: -500ms; }
+      .connecting-overlay .chase rect:nth-child(5) { animation-delay: -375ms; }
+      .connecting-overlay .chase rect:nth-child(6) { animation-delay: -250ms; }
+      .connecting-overlay .chase rect:nth-child(7) { animation-delay: -125ms; }
+      .connecting-overlay .connecting-text { font-size: 14px; color: var(--shell-fg-secondary); margin: 0; }
+
       /* collapsible 更多 area (版本与源): the toggle sits directly inside
          the local-instance block (right under the action buttons, no
          divider — the 启动行为 group below owns the next divider), with a
@@ -796,6 +826,16 @@
         </section>
       </div>
     </main>
+
+    <div class="connecting-overlay" id="connecting-overlay" hidden>
+      <svg class="chase" viewBox="0 0 10 10" shape-rendering="crispEdges" aria-hidden="true">
+        <rect x="0" y="0" width="2" height="2"/><rect x="4" y="0" width="2" height="2"/>
+        <rect x="8" y="0" width="2" height="2"/><rect x="8" y="4" width="2" height="2"/>
+        <rect x="8" y="8" width="2" height="2"/><rect x="4" y="8" width="2" height="2"/>
+        <rect x="0" y="8" width="2" height="2"/><rect x="0" y="4" width="2" height="2"/>
+      </svg>
+      <p class="connecting-text" id="connecting-text">正在连接…</p>
+    </div>
 
     <script type="module" src="./launcher.js"></script>
   </body>

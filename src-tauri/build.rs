@@ -23,6 +23,7 @@ fn main() {
     "shell_back",
     "shell_new_window",
     "shell_ready",
+    "shell_connecting",
     "open_devtools",
     "view_reload",
     "remote_list",

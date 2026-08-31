@@ -45,6 +45,10 @@ const realBridge = {
   back: () => invoke('shell_back'),
   newWindow: () => invoke('shell_new_window'),
   shellReady: () => invoke('shell_ready'),
+  // the connection currently loading in this window (restore boot query)
+  shellConnecting: () => invoke('shell_connecting'),
+  onConnecting: (callback) => on('shell:connecting', (payload) => callback(payload?.name ?? '')),
+  onConnectFailed: (callback) => on('shell:connect-failed', (payload) => callback(payload?.error ?? '')),
   reload: () => invoke('view_reload'),
   openDevTools: () => invoke('open_devtools'),
   onConnectionChanged: (callback) => on('connection:changed', callback),

@@ -159,6 +159,7 @@ stopBtn.addEventListener('click', async () => {
 
 openBtn.addEventListener('click', async () => {
   if (!current) return
+  showConnecting('本机实例')
   await bridge.connect(current.url)
 })
 
@@ -195,12 +196,17 @@ function makeBtn(text, cls, fn) {
   return button
 }
 
-async function connectRemoteById(id) {
+async function connectRemoteById(id, name) {
   remoteError.textContent = ''
+  showConnecting(name)
   try {
     const r = await bridge.remote.connect(id)
-    if (r && !r.ok) remoteError.textContent = r.error || '连接失败'
+    if (r && !r.ok) {
+      hideConnecting()
+      remoteError.textContent = r.error || '连接失败'
+    }
   } catch (e) {
+    hideConnecting()
     remoteError.textContent = e || '连接失败'
   }
 }
@@ -490,7 +496,7 @@ async function renderRemoteList() {
 
     const actions = document.createElement('div')
     actions.className = 'actions'
-    actions.appendChild(makeBtn('连接', 'primary sm', () => connectRemoteById(inst.id)))
+    actions.appendChild(makeBtn('连接', 'primary sm', () => connectRemoteById(inst.id, inst.name)))
     const edit = buildInlineEditForm(inst.id, () => renderRemoteList())
     actions.appendChild(makeBtn('编辑', 'ghost sm', () => openRowEdit(edit, inst)))
     actions.appendChild(makeBtn('删除', 'ghost sm', async () => {
@@ -637,6 +643,23 @@ if (winMax) {
 }
 if (winClose) winClose.addEventListener('click', () => bridge.window.close())
 
+// ---- connecting overlay（恢复连接/手动连接时的加载动画）----
+// The Rust side keeps the node view hidden until its first page load
+// lands; this overlay is what covers the wait instead of a white flash.
+const connectingOverlay = document.getElementById('connecting-overlay')
+const connectingText = document.getElementById('connecting-text')
+function showConnecting(name) {
+  connectingText.textContent = name ? `正在连接 ${name}…` : '正在连接…'
+  connectingOverlay.hidden = false
+}
+function hideConnecting() {
+  connectingOverlay.hidden = true
+}
+bridge.onConnecting((name) => showConnecting(name))
+bridge.onConnectFailed(() => hideConnecting())
+// Restore may begin before this page's listeners attach — query once.
+bridge.shellConnecting().then((name) => { if (name) showConnecting(name) }).catch(() => {})
+
 // ---- events ----
 bridge.onExited(() => {
   setState('idle')
@@ -646,6 +669,7 @@ bridge.onBacked(() => {
 })
 bridge.onConnectionChanged((detail) => {
   titleStatus.textContent = detail.name || 'DeepSeek Harness'
+  hideConnecting()
 })
 
 // ---- npm registry (源) ----

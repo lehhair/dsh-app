@@ -12,6 +12,17 @@ const noop = () => Promise.resolve(() => {})
 // is applied — pair it with the browser's device toolbar for the frame.
 const previewMobile =
   typeof location !== 'undefined' && new URLSearchParams(location.search).has('mobile')
+// ?connecting=<名称> previews the restore-loading overlay: the launcher
+// believes a connection is in flight, shows the spinner, and a fake
+// page-load completion clears it after a few seconds.
+const previewConnecting =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).get('connecting')
+
+const listeners = { connectionChanged: [] }
+const fireConnectionChanged = (name) => listeners.connectionChanged.forEach((cb) => cb({ name }))
+if (previewConnecting) {
+  setTimeout(() => fireConnectionChanged(previewConnecting), 5000)
+}
 
 const state = {
   running: false,
@@ -96,16 +107,28 @@ export const mockBridge = {
   onExited: noop,
   onBacked: noop,
 
-  connect: () => j({ ok: true }),
+  connect: async () => {
+    setTimeout(() => fireConnectionChanged('本机实例'), 1200)
+    return { ok: true }
+  },
   back: () => j({ ok: true }),
   newWindow: () => j({ ok: true }),
   shellReady: () => j({ ok: true }),
   reload: () => j({ ok: true }),
   openDevTools: () => j({ ok: true }),
-  onConnectionChanged: noop,
+  shellConnecting: () => j(previewConnecting || null),
+  onConnecting: () => Promise.resolve(() => {}),
+  onConnectFailed: noop,
+  onConnectionChanged: (callback) => {
+    listeners.connectionChanged.push(callback)
+    return Promise.resolve(() => {})
+  },
 
   remote: {
-    connect: () => j({ ok: true }),
+    connect: async () => {
+      setTimeout(() => fireConnectionChanged('远程节点'), 1200)
+      return { ok: true }
+    },
     list: () => j(state.instances),
     save: async (input) => {
       const id = input.id ?? `inst-${Date.now()}`

@@ -43,6 +43,19 @@ pub struct WinMeta {
   /// the settings would sit below it until re-raised.
   pub settings_below_node: std::sync::atomic::AtomicBool,
   pub last_bounds: Mutex<Option<SavedBounds>>,
+  /// The connection currently loading in this window (desktop only): the
+  /// launcher reads it on startup (restore may begin before the page's
+  /// listeners attach) and the node view's on_page_load completes it.
+  pub connecting: Mutex<Option<ConnectingInfo>>,
+}
+
+/// A connection in flight: the launcher shows a spinner overlay until the
+/// node view's first page load lands — the alternative is seconds of
+/// white/black flash while the dsh page loads.
+#[derive(Clone)]
+pub struct ConnectingInfo {
+  pub id: String,
+  pub name: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -146,6 +159,7 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
       settings_view: Mutex::new(None),
       settings_below_node: std::sync::atomic::AtomicBool::new(false),
       last_bounds: Mutex::new(None),
+      connecting: Mutex::new(None),
     },
   );
 
@@ -191,11 +205,15 @@ fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> 
   // switch) — the settings overlay's page is opaque there anyway.
   #[cfg(not(target_os = "macos"))]
   let builder = builder.transparent(true);
-  let (width, height) = content_size(app, win_label);
+  // The settings overlay spans the WHOLE window — the mask dims the
+  // titlebar too, so the dialog does not look stapled onto the content
+  // area. settings.html pads its body by TITLEBAR_HEIGHT to keep the
+  // dialog itself in the content area.
+  let (width, height) = window_logical_size(app, win_label);
   let view = window
     .add_child(
       builder,
-      LogicalPosition::new(0.0, TITLEBAR_HEIGHT),
+      LogicalPosition::new(0.0, 0.0),
       LogicalSize::new(width, height),
     )
     .map_err(|e| e.to_string())?;
@@ -267,6 +285,11 @@ pub fn relayout(window: &tauri::Window) {
       position: LogicalPosition::new(0.0, TITLEBAR_HEIGHT).into(),
       size: LogicalSize::new(width, height).into(),
     };
+    // The settings overlay covers the whole window (mask dims the titlebar).
+    let full_rect = tauri::Rect {
+      position: LogicalPosition::new(0.0, 0.0).into(),
+      size: LogicalSize::new(width, logical.height).into(),
+    };
     let windows = app.state::<Windows>();
     let states = windows.states.lock().unwrap();
     if let Some(meta) = states.get(window.label()) {
@@ -274,7 +297,7 @@ pub fn relayout(window: &tauri::Window) {
         let _ = view.set_bounds(rect);
       }
       if let Some(view) = meta.settings_view.lock().unwrap().as_ref() {
-        let _ = view.set_bounds(rect);
+        let _ = view.set_bounds(full_rect);
       }
     }
   }
@@ -435,6 +458,17 @@ fn content_size(app: &AppHandle, win_label: &str) -> (f64, f64) {
   (logical.width, (logical.height - TITLEBAR_HEIGHT).max(0.0))
 }
 
+/// The whole window in logical px — the settings overlay spans it all so
+/// its mask dims the titlebar as well.
+#[cfg(desktop)]
+fn window_logical_size(app: &AppHandle, win_label: &str) -> (f64, f64) {
+  let Some(window) = app.get_window(win_label) else { return (0.0, 0.0) };
+  let Ok(size) = window.inner_size() else { return (0.0, 0.0) };
+  let scale = window.scale_factor().unwrap_or(1.0);
+  let logical = size.to_logical::<f64>(scale);
+  (logical.width, logical.height)
+}
+
 // ================= desktop (child-webview model) =================
 
 #[cfg(desktop)]
@@ -461,14 +495,39 @@ pub async fn connect_into_window(
       main.set_cookie(cookie).map_err(|e| format!("设置会话失败：{e}"))?;
     }
   }
+  let existed = view_exists(app, win_label, id);
   let view = view_for(app, win_label, id, url)?;
-  show_view(app, win_label, id);
   let current = view.url().ok();
-  if current.as_ref().map(|u| u.as_str() != url).unwrap_or(true) {
-    let parsed = url::Url::parse(url).map_err(|e| e.to_string())?;
-    view.navigate(parsed).map_err(|e| e.to_string())?;
+  let needs_nav = current.as_ref().map(|u| u.as_str() != url).unwrap_or(true);
+
+  if existed && !needs_nav {
+    // The page is already loaded in this view — switch instantly, no
+    // spinner needed.
+    show_view(app, win_label, id);
+    let _ = app.emit_to(win_label, "connection:changed", serde_json::json!({ "name": name }));
+    return Ok(());
   }
-  let _ = app.emit_to(win_label, "connection:changed", serde_json::json!({ "name": name }));
+
+  // A fresh load is ahead: the launcher's spinner covers it, and the
+  // view's on_page_load shows the view once the dsh page has actually
+  // rendered — never a white/black flash.
+  begin_connecting(app, win_label, id, name);
+  if needs_nav {
+    let parsed = url::Url::parse(url).map_err(|e| e.to_string())?;
+    if let Err(e) = view.navigate(parsed) {
+      fail_connecting(app, win_label, &e.to_string());
+      return Err(e.to_string());
+    }
+  }
+  // Watchdog: a hung load must not pin the spinner forever — after 15s
+  // show whatever is there (dsh's own error page beats an eternal spinner).
+  let app_w = app.clone();
+  let label_w = win_label.to_string();
+  let id_w = id.to_string();
+  tauri::async_runtime::spawn(async move {
+    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+    finish_connecting(&app_w, &label_w, &id_w); // no-op if the load already finished
+  });
   Ok(())
 }
 
@@ -491,6 +550,22 @@ fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Web
   let parsed = url::Url::parse(url).map_err(|e| e.to_string())?;
   let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed))
     .initialization_script(inject::NODE_VIEW_SCRIPT);
+  // The first REAL page load completes any pending connection: the view
+  // stays hidden until the dsh page has rendered, so the user watches the
+  // launcher's spinner instead of a blank view. about:blank fires too (the
+  // pre-created local view) and must NOT complete a connection.
+  let app_load = app.clone();
+  let label_load = win_label.to_string();
+  let id_load = id.to_string();
+  let builder = builder.on_page_load(move |webview, payload| {
+    if payload.event() != tauri::webview::PageLoadEvent::Finished {
+      return;
+    }
+    let real_page = webview.url().map(|u| u.as_str() != "about:blank").unwrap_or(false);
+    if real_page {
+      finish_connecting(&app_load, &label_load, &id_load);
+    }
+  });
   let (width, height) = content_size(app, win_label);
   let view = window
     .add_child(
@@ -521,6 +596,85 @@ fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Web
 }
 
 #[cfg(desktop)]
+fn view_exists(app: &AppHandle, win_label: &str, id: &str) -> bool {
+  let windows = app.state::<Windows>();
+  let states = windows.states.lock().unwrap();
+  states
+    .get(win_label)
+    .map(|meta| meta.views.lock().unwrap().contains_key(id))
+    .unwrap_or(false)
+}
+
+/// Mark a connection as loading — the launcher shows the spinner overlay
+/// until the node view's first page load completes it.
+#[cfg(desktop)]
+pub fn begin_connecting(app: &AppHandle, win_label: &str, id: &str, name: &str) {
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    if let Some(meta) = states.get(win_label) {
+      *meta.connecting.lock().unwrap() = Some(ConnectingInfo { id: id.into(), name: name.into() });
+    }
+  }
+  let _ = app.emit_to(win_label, "shell:connecting", serde_json::json!({ "name": name }));
+}
+
+/// The node view's first load landed (or the watchdog fired): show it and
+/// clear the loading state. No-op when `id` is not the pending connection.
+#[cfg(desktop)]
+fn finish_connecting(app: &AppHandle, win_label: &str, id: &str) {
+  let name = {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    let Some(meta) = states.get(win_label) else { return };
+    let mut connecting = meta.connecting.lock().unwrap();
+    match connecting.as_ref() {
+      Some(c) if c.id == id => {
+        let name = c.name.clone();
+        *connecting = None;
+        name
+      }
+      _ => return,
+    }
+  };
+  show_view(app, win_label, id);
+  let _ = app.emit_to(win_label, "connection:changed", serde_json::json!({ "name": name }));
+}
+
+/// The connection failed before any page load: clear the loading state and
+/// drop the launcher's spinner.
+#[cfg(desktop)]
+pub fn fail_connecting(app: &AppHandle, win_label: &str, error: &str) {
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    if let Some(meta) = states.get(win_label) {
+      *meta.connecting.lock().unwrap() = None;
+    }
+  }
+  let _ = app.emit_to(win_label, "shell:connect-failed", serde_json::json!({ "error": error }));
+}
+
+/// The name of the connection currently loading in this window — the
+/// launcher queries it on startup (restore may begin before listeners).
+pub fn connecting_name(app: &AppHandle, win_label: &str) -> Option<String> {
+  #[cfg(desktop)]
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    return states
+      .get(win_label)
+      .and_then(|meta| meta.connecting.lock().unwrap().clone())
+      .map(|c| c.name);
+  }
+  #[cfg(not(desktop))]
+  {
+    let _ = (app, win_label);
+    None
+  }
+}
+
+#[cfg(desktop)]
 fn show_view(app: &AppHandle, win_label: &str, id: &str) {
   // Collect the views first, then show/hide without holding the locks (the
   // calls can round-trip to the main thread).
@@ -546,12 +700,12 @@ fn show_view(app: &AppHandle, win_label: &str, id: &str) {
 }
 
 #[cfg(desktop)]
-pub fn show_local_view(app: &AppHandle, win_label: &str) {
-  // Pre-create the local view (blank) so restoring the local instance never
-  // sits on the launcher while dsh boots.
-  if let Ok(_view) = view_for(app, win_label, "local", "about:blank") {
-    show_view(app, win_label, "local");
-  }
+pub fn prepare_local_view(app: &AppHandle, win_label: &str) {
+  // Pre-create the local view (blank, HIDDEN) so the booted instance's
+  // first navigation starts rendering sooner; it stays hidden until that
+  // load lands — the launcher's spinner covers the boot instead of a
+  // blank white/black page.
+  let _ = view_for(app, win_label, "local", "about:blank");
 }
 
 #[cfg(desktop)]

@@ -33,6 +33,7 @@
     "allow-shell-back",
     "allow-shell-new-window",
     "allow-shell-ready",
+    "allow-shell-connecting",
     "allow-view-reload",
     "allow-open-devtools",
     "allow-remote-list",

@@ -330,19 +330,24 @@ fn cleanup_stale_embedded() {
   }
 }
 
-/// Show the local view immediately (dark loading ground), boot dsh, connect.
+/// Boot dsh and connect, with the launcher's spinner covering the boot and
+/// the first page load (never a blank view).
 #[cfg(desktop)]
 async fn enter_local(app: &tauri::AppHandle, win_label: &str) {
-  windows::show_local_view(app, win_label);
+  windows::begin_connecting(app, win_label, "local", "DeepSeek Harness");
+  windows::prepare_local_view(app, win_label);
   let service = app.state::<DshService>();
   match service::start_local(app, &service).await {
     Ok(info) => {
       if let Some(url) = info.url {
         let _ = windows::connect_into_window(app, win_label, "local", &url, "DeepSeek Harness", None).await;
+      } else {
+        windows::fail_connecting(app, win_label, "本机实例未就绪");
       }
     }
     Err(error) => {
       log::error!("[local] start failed: {error}");
+      windows::fail_connecting(app, win_label, &error);
       windows::back_to_launcher(app, win_label);
     }
   }
