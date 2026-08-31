@@ -50,7 +50,7 @@ export const mockBridge = {
   appInfo: () =>
     j({
       desktop: !previewMobile,
-      version: '0.3.2',
+      version: '0.3.3',
       bundled: false,
       platform: previewMobile ? 'android' : 'windows',
     }),
