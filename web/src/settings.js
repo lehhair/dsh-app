@@ -116,6 +116,8 @@ localEnter.addEventListener('click', async () => {
 })
 
 closeBtn.addEventListener('click', () => bridge.settings.close())
+// Clicking the dimmed backdrop closes the dialog (standard modal behavior).
+document.querySelector('.mask').addEventListener('click', () => bridge.settings.close())
 
 let currentId = null
 async function renderCurrent() {

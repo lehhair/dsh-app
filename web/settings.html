@@ -74,6 +74,16 @@
         align-items: center;
         justify-content: center;
         overflow: hidden;
+        /* Explicit token color — never the UA default: with the OS in dark
+           mode but the dsh page light, the default CanvasText is WHITE on
+           the light dialog background (the two 本机实例 / gateway names
+           were invisible in exactly that combination). */
+        color: var(--shell-fg);
+        /* The settings view spans the whole window (the mask dims the
+           titlebar too) — keep the dialog itself centered in the content
+           area below the 40px titlebar. */
+        padding-top: 40px;
+        box-sizing: border-box;
       }
 
       .mask {
