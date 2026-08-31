@@ -2,7 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- interactive-widget=resizes-content: the soft keyboard must shrink
+         the LAYOUT viewport (page reflows, content stays reachable) instead
+         of the default resizes-visual, which only shrinks the visual
+         viewport and slides the keyboard OVER the page — that made the
+         search box look "squashed" and glued the add form's 保存 button
+         to the key input on Android. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
     <title>DeepSeek Harness</title>
     <script>
       (function () {
