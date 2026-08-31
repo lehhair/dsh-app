@@ -37,9 +37,9 @@ pub struct Paths {
 
 impl Paths {
   pub fn resolve(app: &AppHandle) -> Self {
-    let res = app.path().resource_dir().unwrap_or_default();
+    let res = simplify(app.path().resource_dir().unwrap_or_default());
     let proj = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let user = app.path().app_data_dir().unwrap_or_else(|_| res.clone());
+    let user = simplify(app.path().app_data_dir().unwrap_or_else(|_| res.clone()));
 
     // Bundled Node binary name: node.exe on Windows, node elsewhere.
     let node_name = if cfg!(windows) { "node.exe" } else { "node" };
@@ -180,9 +180,9 @@ fn materialize_overlay(user: &Path) -> PathBuf {
 /// UI when the external flavor cannot find a global dsh, so a user can report
 /// exactly which probe failed instead of a bare 未找到全局 dsh.
 pub fn resolve_diagnostics(app: &AppHandle) -> String {
-  let res = app.path().resource_dir().unwrap_or_default();
+  let res = simplify(app.path().resource_dir().unwrap_or_default());
   let proj = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-  let user = app.path().app_data_dir().unwrap_or_else(|_| res.clone());
+  let user = simplify(app.path().app_data_dir().unwrap_or_else(|_| res.clone()));
   let mut lines = Vec::new();
   lines.push(format!("resource_dir: {}", res.display()));
   lines.push(format!("app_data_dir: {}", user.display()));
@@ -218,6 +218,27 @@ pub fn resolve_diagnostics(app: &AppHandle) -> String {
   lines.push(format!("overlay: {} -> {}", paths.overlay.display(), paths.overlay.exists()));
   lines.push(format!("bundled: {}", paths.bundled));
   lines.join("\n")
+}
+
+/// Strip the Windows verbatim prefix (`\\?\`) Tauri adds to
+/// `resource_dir` (it canonicalizes internally). Rust's `exists()` accepts
+/// the prefix, but Node's CJS resolver misreads the drive boundary in
+/// `\\?\D:\…`, walks past the filesystem root, and crashes with
+/// `EISDIR: lstat 'D:'` when such a path is passed as the script argument
+/// (nodejs/node#60435 — upstream fix stalled). Every path handed to the
+/// bundled node (npm CLI, dsh bin) must be a plain Win32 path.
+/// `\\?\UNC\server\share` is kept verbatim — stripping would corrupt it.
+fn simplify(path: PathBuf) -> PathBuf {
+  #[cfg(windows)]
+  {
+    let text = path.as_os_str().to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+      if !rest.starts_with(r"UNC\") {
+        return PathBuf::from(rest);
+      }
+    }
+  }
+  path
 }
 
 /// Where the dsh runtime lives. Returns the dir that owns
@@ -373,6 +394,25 @@ mod tests {
   fn overlay_files(user: &Path) -> (PathBuf, PathBuf) {
     let dir = user.join("overlay");
     (dir.join("embedded-overlay.yml"), dir.join(".overlay-default"))
+  }
+
+  #[test]
+  fn verbatim_prefix_is_stripped() {
+    // The bundled node crashes on \\?\-prefixed script paths (EISDIR).
+    assert_eq!(
+      super::simplify(PathBuf::from(r"\\?\D:\app\node.exe")),
+      PathBuf::from(r"D:\app\node.exe")
+    );
+    // UNC shares must keep the prefix — stripping corrupts them.
+    assert_eq!(
+      super::simplify(PathBuf::from(r"\\?\UNC\server\share")),
+      PathBuf::from(r"\\?\UNC\server\share")
+    );
+    // Plain paths pass through untouched.
+    assert_eq!(
+      super::simplify(PathBuf::from(r"C:\normal\path")),
+      PathBuf::from(r"C:\normal\path")
+    );
   }
 
   #[test]
