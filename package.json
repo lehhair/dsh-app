@@ -1,6 +1,6 @@
 {
   "name": "dsh-app",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "description": "dsh app shell (Tauri 2): embedded dsh runtime via bundled official Node, plus remote dsh node support",
