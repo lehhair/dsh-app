@@ -161,8 +161,12 @@ export const mockBridge = {
     close: () => {},
     isMaximized: () => j(false),
     onMaximizedChanged: (callback) => {
-      callback(false)
-      return Promise.resolve(() => {})
+      // No real window state in a browser — treat a full-width window as
+      // "maximized" so the corner hit-slots can be verified in preview.
+      const check = () => callback(window.innerWidth >= screen.availWidth - 8)
+      window.addEventListener('resize', check)
+      check()
+      return Promise.resolve(() => window.removeEventListener('resize', check))
     },
   },
 }

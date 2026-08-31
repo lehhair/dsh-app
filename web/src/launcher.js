@@ -627,6 +627,7 @@ if (winMin) winMin.addEventListener('click', () => bridge.window.minimize())
 if (winMax) {
   winMax.addEventListener('click', () => bridge.window.toggleMaximize())
   bridge.window.onMaximizedChanged((maximized) => {
+    document.body.classList.toggle('maximized', maximized)
     const restore = winMax.querySelector('.icon-restore')
     const maximize = winMax.querySelector('.icon-maximize')
     if (restore) restore.style.display = maximized ? '' : 'none'

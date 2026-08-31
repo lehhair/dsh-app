@@ -161,7 +161,9 @@
         cursor: default;
         transition: background-color 0.12s ease, color 0.12s ease;
       }
-      .titlebar .win-btn.close:hover { background: rgb(196, 43, 28); color: #fff; }
+      /* Must out-specify the generic .win-btn:hover:not(:disabled) below
+         (same 0,4,0 weight, later rule wins) or the red never shows. */
+      .titlebar .win-btn.close:hover:not(:disabled) { background: rgb(196, 43, 28); color: #fff; }
       .titlebar .win-btn svg { width: 12px; height: 12px; display: block; }
       .titlebar .win-btn.settings { width: 34px; margin-left: 8px; }
       .titlebar .win-btn.settings svg { width: 14px; height: 14px; }
@@ -172,6 +174,17 @@
       .titlebar .win-btn:hover:not(:disabled) { background: var(--shell-hover); color: var(--shell-fg); }
       .titlebar .win-btn:disabled { opacity: 0.35; }
       body.inactive .titlebar { opacity: 0.6; }
+      /* Maximized: the corner pixel must hit 关闭 (Fitts's law) — but the
+         visual chips must not change. Invisible ::before hit-slots extend
+         each window button's clickable area over its margins and the
+         titlebar's top/bottom gaps, so a mouse thrown at the screen edge
+         lands on a button without a second positioning pass. */
+      .titlebar .win-btn { position: relative; }
+      body.maximized .titlebar .win-btn::before {
+        content: '';
+        position: absolute;
+        inset: -4px -2px;
+      }
       /* Mobile: the status bar is fused with the page (edge-to-edge) — pad
          the content below the real inset (read natively; WebView < 140 lies
          about env(safe-area-inset-*)). The page itself does not scroll: only
