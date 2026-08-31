@@ -398,21 +398,32 @@ mod tests {
 
   #[test]
   fn verbatim_prefix_is_stripped() {
-    // The bundled node crashes on \\?\-prefixed script paths (EISDIR).
-    assert_eq!(
-      super::simplify(PathBuf::from(r"\\?\D:\app\node.exe")),
-      PathBuf::from(r"D:\app\node.exe")
-    );
-    // UNC shares must keep the prefix — stripping corrupts them.
-    assert_eq!(
-      super::simplify(PathBuf::from(r"\\?\UNC\server\share")),
-      PathBuf::from(r"\\?\UNC\server\share")
-    );
-    // Plain paths pass through untouched.
-    assert_eq!(
-      super::simplify(PathBuf::from(r"C:\normal\path")),
-      PathBuf::from(r"C:\normal\path")
-    );
+    #[cfg(windows)]
+    {
+      // The bundled node crashes on \\?\-prefixed script paths (EISDIR).
+      assert_eq!(
+        super::simplify(PathBuf::from(r"\\?\D:\app\node.exe")),
+        PathBuf::from(r"D:\app\node.exe")
+      );
+      // UNC shares must keep the prefix — stripping corrupts them.
+      assert_eq!(
+        super::simplify(PathBuf::from(r"\\?\UNC\server\share")),
+        PathBuf::from(r"\\?\UNC\server\share")
+      );
+      // Plain paths pass through untouched.
+      assert_eq!(
+        super::simplify(PathBuf::from(r"C:\normal\path")),
+        PathBuf::from(r"C:\normal\path")
+      );
+    }
+    #[cfg(not(windows))]
+    {
+      // Off Windows the prefix does not exist — simplify is a no-op.
+      assert_eq!(
+        super::simplify(PathBuf::from("/usr/local/bin/node")),
+        PathBuf::from("/usr/local/bin/node")
+      );
+    }
   }
 
   #[test]
