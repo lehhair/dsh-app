@@ -649,6 +649,9 @@ if (winClose) winClose.addEventListener('click', () => bridge.window.close())
 const connectingOverlay = document.getElementById('connecting-overlay')
 const connectingText = document.getElementById('connecting-text')
 function showConnecting(name) {
+  // Mobile has no layered views — connecting navigates the whole page
+  // away, so the overlay would just flash for a frame. Skip it there.
+  if (document.body.classList.contains('mobile')) return
   connectingText.textContent = name ? `正在连接 ${name}…` : '正在连接…'
   connectingOverlay.hidden = false
 }
