@@ -1,6 +1,6 @@
 [package]
 name = "dsh-app"
-version = "0.3.6"
+version = "0.3.7"
 description = "DeepSeek Harness shell — embedded dsh runtime + remote dsh nodes (Tauri 2)"
 authors = ["lehhair"]
 edition = "2021"
