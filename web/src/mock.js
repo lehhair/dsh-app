@@ -17,6 +17,10 @@ const previewMobile =
 // page-load completion clears it after a few seconds.
 const previewConnecting =
   typeof location !== 'undefined' && new URLSearchParams(location.search).get('connecting')
+// ?launcher-update=1 previews the launcher-update row (off by default —
+// the real app only shows it when an update actually exists).
+const previewLauncherUpdate =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).has('launcher-update')
 
 const listeners = { connectionChanged: [] }
 const fireConnectionChanged = (name) => listeners.connectionChanged.forEach((cb) => cb({ name }))
@@ -102,7 +106,9 @@ export const mockBridge = {
   },
 
   checkLauncherUpdate: () =>
-    j({ updateAvailable: true, version: '0.3.2', url: null, size: null, notes: null, sha256: null }),
+    previewLauncherUpdate
+      ? j({ updateAvailable: true, version: '0.3.2', url: null, size: null, notes: null, sha256: null })
+      : j({ updateAvailable: false, version: null, url: null, size: null, notes: null, sha256: null }),
   launcherUpdate: () => j({ ok: true }),
   onExited: noop,
   onBacked: noop,
