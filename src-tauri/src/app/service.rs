@@ -90,6 +90,9 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
     .arg(&paths.overlay)
     .arg("--profile")
     .arg("web")
+    // dsh web opens the system browser by default — the shell IS the
+    // browser; an extra browser window on every 启动内嵌 dsh is noise.
+    .arg("--no-open")
     .arg("--port")
     .arg(port.to_string())
     .stdin(std::process::Stdio::null())
