@@ -209,7 +209,6 @@
          clears the system navigation area. */
       body.mobile .section.remote {
         min-height: 0;
-        padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
       }
       /* 手机上垂直空间宝贵：说明文字与搜索框的间距收紧（桌面 16px） */
       body.mobile .section.remote > .meta { margin-bottom: 8px; }
@@ -278,8 +277,10 @@
          间距因此多出一截；有内容时仍保留间距并不被软键盘挤压） */
       .section.remote > #remote-error { min-height: 0; margin: 0 0 8px; }
       .section.remote > #remote-error:empty { margin-bottom: 0; }
-      /* 添加实例表单的错误行同理：空时不撑出 28px 死空白 */
-      #remote-form > .error:empty { min-height: 0; margin: 0; }
+      /* 添加实例表单的错误行同理：空时不撑出 28px 死空白（与行内编辑
+         表单的 error 样式对齐） */
+      #remote-form > .error { min-height: 0; margin: 8px 0 0; }
+      #remote-form > .error:empty { margin: 0; }
       .remote-list {
         flex: 1;
         min-height: 0;
@@ -737,7 +738,7 @@
         </div>
 
         <section class="section" id="local-section">
-          <div class="row-title">本机实例 <span id="badge" class="pill">未知</span></div>
+          <div class="row-title"><span>本机实例</span> <span id="badge" class="pill">未知</span></div>
           <p class="meta" id="meta">未启动</p>
           <div class="actions">
             <button id="start" class="btn primary">启动内嵌 dsh</button>
@@ -829,7 +830,7 @@
         </section>
 
         <section class="section remote">
-          <div class="row-title">远程节点 <button id="remote-add" class="btn sm outline">添加实例</button></div>
+          <div class="row-title"><span>远程节点</span> <button id="remote-add" class="btn sm outline">添加实例</button></div>
           <p class="meta">连接远程 dsh（经网关，访问密钥注入）；可添加、保存、切换多个节点。</p>
           <p class="error" id="remote-error"></p>
           <span class="search">
@@ -844,8 +845,8 @@
               <input id="rf-key" class="field" type="password" placeholder="访问密钥（留空保留）" />
             </div>
             <div class="actions" style="margin-top:10px">
-              <button id="rf-save" class="btn primary">保存</button>
-              <button id="rf-cancel" class="btn ghost">取消</button>
+              <button id="rf-save" class="btn primary sm">保存</button>
+              <button id="rf-cancel" class="btn ghost sm">取消</button>
             </div>
             <p class="error" id="rf-error"></p>
           </div>
