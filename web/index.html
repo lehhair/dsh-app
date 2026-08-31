@@ -290,15 +290,20 @@
       .section .row-title {
         display: flex;
         align-items: center;
-        gap: 10px;
         font-size: 15px;
         font-weight: 500;
         margin-bottom: 4px;
       }
+      .section .row-title > * + * { margin-left: 10px; }
       .section .meta { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0 0 16px; }
       .section .hint { font-size: 14px; color: var(--shell-fg-tertiary); margin: 0; }
-      .actions { display: flex; gap: 8px; align-items: center; }
-      .field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      /* flex `gap` needs Chrome 84+ — older Android System WebViews ignore
+         it and flex children glue together (the 保存/取消 buttons on the
+         phone). Adjacent-sibling margins work everywhere and look identical. */
+      .actions { display: flex; align-items: center; }
+      .actions > * + * { margin-left: 8px; }
+      .field-row { display: flex; align-items: center; flex-wrap: wrap; margin: -4px; }
+      .field-row > .field { margin: 4px; }
       .field {
         height: 36px;
         padding: 0 12px;
@@ -322,7 +327,6 @@
       .search {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
         height: 32px;
         padding: 0 8px;
         width: 100%;
@@ -332,6 +336,7 @@
         background: var(--shell-layer);
         transition: border-color 0.12s ease;
       }
+      .search > * + * { margin-left: 6px; }
       .search:focus-within { border-color: var(--shell-brand); }
       .search-icon {
         display: inline-flex;
@@ -617,9 +622,9 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 18px;
         background: var(--shell-bg);
       }
+      .connecting-overlay > * + * { margin-top: 18px; }
       .connecting-overlay .chase { width: 30px; height: 30px; }
       .connecting-overlay .chase rect {
         fill: rgb(86, 134, 254);
