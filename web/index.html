@@ -105,6 +105,12 @@
       }
 
       html, body { height: 100%; margin: 0; }
+      /* Explicit html background: body alone leaves the WebView's default
+         WHITE canvas exposed whenever the layout viewport shrinks or the
+         page is scrolled past its end (Android soft keyboard pushing the
+         focused input up) — old WebViews don't reliably propagate body's
+         background to the canvas. This is the white bar at the bottom. */
+      html { background: var(--shell-bg); }
       /* Revealed by launcher.js once the safe-area inset is applied */
       html.pad-pending body { visibility: hidden; }
       body {
@@ -277,10 +283,6 @@
          间距因此多出一截；有内容时仍保留间距并不被软键盘挤压） */
       .section.remote > #remote-error { min-height: 0; margin: 0 0 8px; }
       .section.remote > #remote-error:empty { margin-bottom: 0; }
-      /* 添加实例表单的错误行同理：空时不撑出 28px 死空白（与行内编辑
-         表单的 error 样式对齐） */
-      #remote-form > .error { min-height: 0; margin: 8px 0 0; }
-      #remote-form > .error:empty { margin: 0; }
       .remote-list {
         flex: 1;
         min-height: 0;
@@ -837,19 +839,8 @@
             <span class="search-icon"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z"/><path d="M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z"/></svg></span>
             <input id="remote-search" class="search-input" placeholder="搜索实例（名称 / 地址）" spellcheck="false" />
           </span>
-          <!-- Add-instance form: fixed above the list so it is visible when 添加实例 opens it -->
-          <div id="remote-form" class="remote-form" hidden>
-            <div class="field-row">
-              <input id="rf-name" class="field" placeholder="名称，如 书房网关" spellcheck="false" />
-              <input id="rf-url" class="field" placeholder="http://192.168.1.233:8443" spellcheck="false" />
-              <input id="rf-key" class="field" type="password" placeholder="访问密钥（留空保留）" />
-            </div>
-            <div class="actions" style="margin-top:10px">
-              <button id="rf-save" class="btn primary sm">保存</button>
-              <button id="rf-cancel" class="btn ghost sm">取消</button>
-            </div>
-            <p class="error" id="rf-error"></p>
-          </div>
+          <!-- 添加实例表单由 launcher.js 用 buildInstanceForm 动态生成并插到
+               这里（与行内编辑表单完全同一套 DOM，杜绝任何结构分叉） -->
           <div id="remote-list" class="remote-list"></div>
         </section>
       </div>

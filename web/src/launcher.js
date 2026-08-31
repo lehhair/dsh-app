@@ -179,14 +179,7 @@ remoteList.addEventListener('scroll', () => {
   scrollHideTimer = setTimeout(() => remoteList.classList.remove('scrolling'), 500)
 })
 const remoteAddBtn = document.getElementById('remote-add')
-const remoteForm = document.getElementById('remote-form')
-const rfName = document.getElementById('rf-name')
-const rfUrl = document.getElementById('rf-url')
-const rfKey = document.getElementById('rf-key')
-const rfSave = document.getElementById('rf-save')
-const rfCancel = document.getElementById('rf-cancel')
-const rfError = document.getElementById('rf-error')
-let editingId = null
+let openInlineForm = null // the currently expanded row edit form (if any)
 
 function makeBtn(text, cls, fn) {
   const button = document.createElement('button')
@@ -519,12 +512,11 @@ async function renderRemoteList() {
 
 remoteSearch.addEventListener('input', () => renderRemoteList())
 
-// ---- inline per-row edit form: editing happens where the node is, not in a
-// form at the bottom of the page. The global #remote-form is for adding. ----
+// ---- inline instance form: ONE builder for both adding (fixed above the
+// list) and editing (inline per row) — a single DOM shape, so the two can
+// never drift apart in spacing or style. ----
 
-let openInlineForm = null // the currently expanded row edit form (if any)
-
-function buildInlineEditForm(id, onSaved) {
+function buildInstanceForm({ onSave, onCancel }) {
   const form = document.createElement('div')
   form.className = 'remote-form'
   form.hidden = true
@@ -551,28 +543,68 @@ function buildInlineEditForm(id, onSaved) {
   actions.className = 'actions'
   actions.style.marginTop = '10px'
   actions.append(
-    makeBtn('保存', 'primary sm', async () => {
+    makeBtn('保存', 'primary sm', () => onSave({ name, url, key, error })),
+    makeBtn('取消', 'ghost sm', onCancel),
+  )
+  form.append(fieldRow, actions, error)
+  return { form, name, url, key, error }
+}
+
+// The add-instance form: identical to the row edit form, fixed above the list.
+const addForm = buildInstanceForm({
+  onSave: async ({ name, url, key, error }) => {
+    error.textContent = ''
+    const r = await bridge.remote.save({ name: name.value, url: url.value, key: key.value })
+    if (r.ok) {
+      addForm.form.hidden = true
+      name.value = ''
+      url.value = ''
+      key.value = ''
+      renderRemoteList()
+    } else {
+      error.textContent = r.error || '保存失败'
+    }
+  },
+  onCancel: () => { addForm.form.hidden = true },
+})
+remoteList.before(addForm.form)
+
+remoteAddBtn.addEventListener('click', () => {
+  if (openInlineForm) {
+    openInlineForm.hidden = true
+    openInlineForm = null
+  }
+  addForm.name.value = ''
+  addForm.url.value = ''
+  addForm.key.value = ''
+  addForm.error.textContent = ''
+  addForm.form.hidden = false
+  addForm.name.focus()
+})
+
+function buildInlineEditForm(id, onSaved) {
+  const f = buildInstanceForm({
+    onSave: async ({ name, url, key, error }) => {
       error.textContent = ''
       const r = await bridge.remote.save({ id, name: name.value, url: url.value, key: key.value })
       if (r.ok) {
-        form.hidden = true
-        if (openInlineForm === form) openInlineForm = null
+        f.form.hidden = true
+        if (openInlineForm === f.form) openInlineForm = null
         onSaved()
       } else {
         error.textContent = r.error || '保存失败'
       }
-    }),
-    makeBtn('取消', 'ghost sm', () => {
-      form.hidden = true
-      if (openInlineForm === form) openInlineForm = null
-    }),
-  )
-  form.append(fieldRow, actions, error)
-  return { form, name, url, key }
+    },
+    onCancel: () => {
+      f.form.hidden = true
+      if (openInlineForm === f.form) openInlineForm = null
+    },
+  })
+  return f
 }
 
 function openRowEdit(edit, inst) {
-  remoteForm.hidden = true // close the global add form
+  addForm.form.hidden = true // close the add form
   if (openInlineForm && openInlineForm !== edit.form) openInlineForm.hidden = true
   edit.name.value = inst.name
   edit.url.value = inst.url
@@ -581,39 +613,6 @@ function openRowEdit(edit, inst) {
   openInlineForm = edit.form
   edit.name.focus()
 }
-
-// add-instance: the global form sits fixed above the list
-remoteAddBtn.addEventListener('click', () => {
-  if (openInlineForm) {
-    openInlineForm.hidden = true
-    openInlineForm = null
-  }
-  editingId = null
-  rfName.value = ''
-  rfUrl.value = ''
-  rfKey.value = ''
-  rfError.textContent = ''
-  remoteForm.hidden = false
-  rfName.focus()
-})
-rfCancel.addEventListener('click', () => { remoteForm.hidden = true })
-
-rfSave.addEventListener('click', async () => {
-  rfError.textContent = ''
-  const r = await bridge.remote.save({
-    id: editingId ?? undefined,
-    name: rfName.value,
-    url: rfUrl.value,
-    key: rfKey.value,
-  })
-  if (r.ok) {
-    remoteForm.hidden = true
-    editingId = null
-    renderRemoteList()
-  } else {
-    rfError.textContent = r.error || '保存失败'
-  }
-})
 
 // settings opens the settings dialog (desktop overlay)
 settingsBtn.addEventListener('click', async () => {
