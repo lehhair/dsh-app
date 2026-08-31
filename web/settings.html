@@ -129,7 +129,7 @@
         cursor: pointer;
         transition: background-color 0.12s ease, color 0.12s ease;
       }
-      .dialog-header button:hover { background: var(--shell-hover); color: var(--shell-fg); }
+      .dialog-header button.hover { background: var(--shell-hover); color: var(--shell-fg); }
       .dialog-header button svg { width: 12px; height: 12px; display: block; }
 
       .dialog-fixed {
@@ -207,7 +207,7 @@
         border-radius: 10px;
         transition: background-color 0.12s ease;
       }
-      .instance-row:hover { background: var(--shell-hover); }
+      .instance-row.hover { background: var(--shell-hover); }
       .instance-row .meta { flex: 1; min-width: 0; }
       .instance-row .meta .name { font-size: 14px; display: flex; align-items: center; gap: 6px; }
       .instance-row .meta .url { font-size: 12px; color: var(--shell-fg-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -282,9 +282,9 @@
       }
       .btn:disabled { opacity: 0.4; cursor: default; }
       .btn.primary { background: var(--shell-brand); color: var(--shell-bg); }
-      .btn.primary:hover:not(:disabled) { background: var(--shell-brand-hover); }
+      .btn.primary.hover:not(:disabled) { background: var(--shell-brand-hover); }
       .btn.outline { border: 1px solid var(--shell-border); }
-      .btn.ghost:hover:not(:disabled) { background: var(--shell-hover); }
+      .btn.ghost.hover:not(:disabled) { background: var(--shell-hover); }
 
       .hint { font-size: 12px; color: var(--shell-fg-tertiary); margin: 0; }
     </style>

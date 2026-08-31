@@ -614,21 +614,28 @@ function openRowEdit(edit, inst) {
   edit.name.focus()
 }
 
+// ---- JS-driven hover for buttons that can end up COVERED ----
+// A pseudo-class :hover sticks forever once another webview (settings
+// overlay, node view) covers this page: Chromium only re-evaluates it on
+// real mouse moves, which the covering webview swallows. Button highlight
+// is therefore maintained as a .hover class via mouseover/mouseout
+// delegation, and cleared explicitly when a click is about to cover the
+// page (settings button) or when we come back to the launcher (onBacked).
+document.addEventListener('mouseover', (event) => {
+  const btn = event.target.closest('.btn, .win-btn.settings')
+  if (btn) btn.classList.add('hover')
+})
+document.addEventListener('mouseout', (event) => {
+  const btn = event.target.closest('.btn, .win-btn.settings')
+  if (btn && !btn.contains(event.relatedTarget)) btn.classList.remove('hover')
+})
+
 // settings opens the settings dialog (desktop overlay)
 settingsBtn.addEventListener('click', async () => {
-  // The settings overlay covers the WHOLE window (titlebar included), so
-  // this button never receives a mouseleave and its :hover would stick
-  // after the dialog closes. Drop pointer-events so Chromium re-runs
-  // hit-testing and clears the hover — but only RESTORE them after the
-  // overlay is actually up: restoring while the cursor still sits on the
-  // uncovered button (e.g. next frame) just re-arms the hover.
-  settingsBtn.style.pointerEvents = 'none'
-  const restore = () => { settingsBtn.style.pointerEvents = '' }
+  settingsBtn.classList.remove('hover') // the overlay covers the button — clear now
   try {
     await bridge.settings.open()
-    restore() // the overlay now covers the button — hover cannot re-arm
   } catch (e) {
-    restore()
     log.hidden = false
     log.textContent = e || '无法打开设置'
   }
@@ -678,6 +685,9 @@ bridge.onExited(() => {
 })
 bridge.onBacked(() => {
   titleStatus.textContent = 'DeepSeek Harness'
+  // Node views covered the launcher — any button highlighted at connect
+  // time never saw a mouseleave. Clear every JS hover on the way back.
+  document.querySelectorAll('.hover').forEach((el) => el.classList.remove('hover'))
 })
 bridge.onConnectionChanged((detail) => {
   titleStatus.textContent = detail.name || 'DeepSeek Harness'

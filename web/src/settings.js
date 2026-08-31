@@ -36,6 +36,18 @@ const toLauncherBtn = document.getElementById('to-launcher')
 const instancesEl = document.getElementById('instances')
 const dlgError = document.getElementById('dlg-error')
 
+// ---- JS-driven hover (.hover class), same reason as the launcher: this
+// overlay is a cached webview — when it hides, covered buttons never get a
+// mouseleave and a pseudo-class :hover would stick until the next show.
+document.addEventListener('mouseover', (event) => {
+  const el = event.target.closest('button, .instance-row')
+  if (el) el.classList.add('hover')
+})
+document.addEventListener('mouseout', (event) => {
+  const el = event.target.closest('button, .instance-row')
+  if (el && !el.contains(event.relatedTarget)) el.classList.remove('hover')
+})
+
 // ---- local embedded instance row ----
 const localDot = document.getElementById('local-dot')
 const localUrl = document.getElementById('local-url')
@@ -234,13 +246,9 @@ renderInstances()
 // dialog is shown again; while hidden, state changes arrive via events
 // (no polling from a hidden page).
 bridge.onSettingsRefresh(() => {
-  // A hidden view never fires mouseleave, so buttons keep a stale :hover
-  // from whatever was pressed to close the dialog last time. Toggle
-  // pointer-events on every show to make Chromium drop it.
-  for (const el of document.querySelectorAll('button:hover')) {
-    el.style.pointerEvents = 'none'
-    requestAnimationFrame(() => { el.style.pointerEvents = '' })
-  }
+  // Clear every JS hover left over from whatever was pressed to close the
+  // dialog last time (a hidden view never fires mouseleave/mouseout).
+  document.querySelectorAll('.hover').forEach((el) => el.classList.remove('hover'))
   renderCurrent()
   renderLocal()
   renderInstances()

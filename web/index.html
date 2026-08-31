@@ -185,6 +185,14 @@
       .titlebar .win-btn#reload svg { width: 14px; height: 14px; }
       .titlebar .win-btn:hover:not(:disabled) { background: var(--shell-hover); color: var(--shell-fg); }
       .titlebar .win-btn:disabled { opacity: 0.35; }
+      /* The settings button's highlight is JS-driven (.hover class), NOT
+         :hover: clicking it opens the settings overlay, which covers the
+         whole window — the button then never receives a mouseleave and a
+         pseudo-class :hover would stick. Chromium only re-evaluates :hover
+         on real mouse moves, which the overlay (a separate webview)
+         swallows, so no in-document trick can clear it. */
+      .titlebar .win-btn.settings:hover:not(:disabled) { background: transparent; color: var(--shell-fg-secondary); }
+      .titlebar .win-btn.settings.hover:not(:disabled) { background: var(--shell-hover); color: var(--shell-fg); }
       body.inactive .titlebar { opacity: 0.6; }
       /* Maximized: the corner pixel must hit 关闭 (Fitts's law) — but the
          visual chips must not change. Invisible ::before hit-slots extend
@@ -466,11 +474,11 @@
         background: var(--shell-brand);
         color: var(--shell-fg-foreground);
       }
-      .btn.primary:hover:not(:disabled) { background: var(--shell-brand-hover); }
-      .btn.ghost:hover:not(:disabled) { background: var(--shell-hover); }
+      .btn.primary.hover:not(:disabled) { background: var(--shell-brand-hover); }
+      .btn.ghost.hover:not(:disabled) { background: var(--shell-hover); }
       .btn.ghost:active:not(:disabled) { background: var(--shell-active); }
       .btn.outline { border: 1px solid var(--shell-border); background: transparent; }
-      .btn.outline:hover:not(:disabled) { background: var(--shell-hover); }
+      .btn.outline.hover:not(:disabled) { background: var(--shell-hover); }
 
       /* dsh Pill: h24 r12, label-secondary on layer-2; active = ghost-active fill + inset ring */
       .pill {
