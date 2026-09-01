@@ -9,8 +9,6 @@ import android.os.Looper
 import android.view.View
 import android.view.WindowInsetsController
 import android.webkit.ConsoleMessage
-import android.webkit.CustomViewCallback
-import android.webkit.FileChooserParams
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
@@ -99,7 +97,7 @@ class MainActivity : TauriActivity() {
           return inner?.onCreateWindow(view, isDialog, isUserGesture, resultMsg) ?: false
         }
 
-        override fun onShowCustomView(view: View, callback: android.webkit.CustomViewCallback) {
+        override fun onShowCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
           inner?.onShowCustomView(view, callback) ?: super.onShowCustomView(view, callback)
         }
         override fun onHideCustomView() {
@@ -117,7 +115,7 @@ class MainActivity : TauriActivity() {
         override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
           inner?.onGeolocationPermissionsShowPrompt(origin, callback) ?: super.onGeolocationPermissionsShowPrompt(origin, callback)
         }
-        override fun onShowFileChooser(webView: WebView, filePathCallback: ValueCallback<Array<Uri?>?>, fileChooserParams: FileChooserParams): Boolean =
+        override fun onShowFileChooser(webView: WebView, filePathCallback: ValueCallback<Array<Uri?>?>, fileChooserParams: WebChromeClient.FileChooserParams): Boolean =
           inner?.onShowFileChooser(webView, filePathCallback, fileChooserParams) ?: super.onShowFileChooser(webView, filePathCallback, fileChooserParams)
         override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean =
           inner?.onConsoleMessage(consoleMessage) ?: super.onConsoleMessage(consoleMessage)
