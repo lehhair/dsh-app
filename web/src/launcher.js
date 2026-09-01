@@ -234,6 +234,60 @@ autoLocalToggle.addEventListener('click', async () => {
   autoLocalToggle.setAttribute('aria-checked', String(on))
 })
 
+// ---- close-button behavior (更多 → 关闭行为) ----
+// "ask" (每次询问, default) | "close" (直接关闭) | "tray" (退到托盘).
+// The confirm dialog can also set this via 记住此操作; 重置 restores "ask".
+const closeBehaviorLabel = document.getElementById('close-behavior-label')
+const closeBehaviorPanel = document.getElementById('close-behavior-panel')
+const closeBehaviorSave = document.getElementById('close-behavior-save')
+const closeBehaviorCancel = document.getElementById('close-behavior-cancel')
+
+const CLOSE_BEHAVIOR_TEXT = {
+  ask: '每次询问',
+  close: '直接关闭',
+  tray: '退到托盘',
+}
+
+function ringCloseOption(behavior) {
+  closeBehaviorPanel.querySelectorAll('[data-close-behavior]').forEach((btn) => {
+    btn.classList.toggle('selected', btn.dataset.closeBehavior === behavior)
+  })
+}
+
+async function renderCloseBehavior() {
+  const behavior = await bridge.settings.getCloseBehavior().catch(() => 'ask')
+  closeBehaviorLabel.textContent = CLOSE_BEHAVIOR_TEXT[behavior] ?? CLOSE_BEHAVIOR_TEXT.ask
+  ringCloseOption(behavior)
+}
+
+document.getElementById('close-behavior-edit').addEventListener('click', () => {
+  closeBehaviorPanel.hidden = !closeBehaviorPanel.hidden
+})
+closeBehaviorCancel.addEventListener('click', () => {
+  closeBehaviorPanel.hidden = true
+})
+closeBehaviorPanel.querySelectorAll('[data-close-behavior]').forEach((btn) => {
+  btn.addEventListener('click', () => ringCloseOption(btn.dataset.closeBehavior))
+})
+closeBehaviorSave.addEventListener('click', async () => {
+  const selected = closeBehaviorPanel.querySelector('.close-option.selected')
+  const behavior = selected ? selected.dataset.closeBehavior : 'ask'
+  try {
+    await bridge.settings.setCloseBehavior(behavior)
+    closeBehaviorPanel.hidden = true
+    renderCloseBehavior()
+  } catch (e) {
+    closeBehaviorLabel.textContent = e || '保存失败'
+  }
+})
+document.getElementById('close-behavior-reset').addEventListener('click', async () => {
+  try {
+    await bridge.settings.resetCloseBehavior()
+  } catch (_e) {}
+  closeBehaviorPanel.hidden = true
+  renderCloseBehavior()
+})
+
 // ---- collapsible 更多 (版本与源) ----
 // Low-frequency settings live behind a fold; the toggle row shows a
 // version · registry summary so the state stays visible while collapsed.
@@ -812,6 +866,7 @@ refresh()
 renderRemoteList()
 renderRestore()
 renderAutoLocal()
+renderCloseBehavior()
 renderDshVersion()
 renderRegistry()
 checkLauncherUpdate()

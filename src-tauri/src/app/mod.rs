@@ -115,6 +115,12 @@ pub fn run() {
       commands::registry_get,
       commands::registry_set,
       commands::theme_changed,
+      commands::settings_get_close_behavior,
+      commands::settings_set_close_behavior,
+      commands::settings_reset_close_behavior,
+      commands::window_close_confirm,
+      commands::window_close_to_tray,
+      commands::window_close_cancel,
     ])
     .setup(|app| {
       let config_dir = app
@@ -145,8 +151,20 @@ pub fn run() {
       Ok(())
     })
     .on_window_event(|window, event| match event {
-      tauri::WindowEvent::CloseRequested { .. } => {
-        windows::save_window_state(window);
+      tauri::WindowEvent::CloseRequested { api, .. } => {
+        // Desktop: intercept according to the configured close action (ask /
+        // direct / tray). Mobile keeps the plain close. `api` is consumed by
+        // on_close_requested on desktop — it must be the last use of the
+        // borrow, so mobile's fallthrough lives in the cfg branch shape below.
+        #[cfg(desktop)]
+        {
+          windows::on_close_requested(window, api);
+        }
+        #[cfg(not(desktop))]
+        {
+          let _ = api;
+          windows::save_window_state(window);
+        }
       }
       tauri::WindowEvent::Destroyed => {
         windows::on_window_destroyed(window);

@@ -42,6 +42,12 @@ fn main() {
     "registry_get",
     "registry_set",
     "theme_changed",
+    "settings_get_close_behavior",
+    "settings_set_close_behavior",
+    "settings_reset_close_behavior",
+    "window_close_confirm",
+    "window_close_to_tray",
+    "window_close_cancel",
   ]);
   tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
     .expect("failed to run tauri-build");

@@ -180,9 +180,22 @@ export const mockBridge = {
       state.autoLocal = enabled
       return { ok: true }
     },
+    getCloseBehavior: () => j(state.closeBehavior ?? 'ask'),
+    setCloseBehavior: async (behavior) => {
+      state.closeBehavior = behavior
+      return { ok: true }
+    },
+    resetCloseBehavior: async () => {
+      state.closeBehavior = 'ask'
+      return { ok: true }
+    },
   },
   onSettingsRefresh: noop,
   onThemeSync: noop,
+
+  windowCloseConfirm: () => j({ ok: true }),
+  windowCloseToTray: () => j({ ok: true }),
+  windowCloseCancel: () => j({ ok: true }),
 
   window: {
     minimize: () => {},

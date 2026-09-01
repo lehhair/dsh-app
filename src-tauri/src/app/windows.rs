@@ -24,9 +24,40 @@ use tauri::{LogicalPosition, LogicalSize, WebviewBuilder};
 
 pub const TITLEBAR_HEIGHT: f64 = 40.0;
 
+/// Title-bar close action (shell.json "closeBehavior"): what happens when the
+/// user clicks the close button (or an OS-level close request fires).
+pub const CLOSE_ASK: &str = "ask"; // always show the confirm dialog
+pub const CLOSE_DIRECT: &str = "close"; // close the window immediately
+pub const CLOSE_TRAY: &str = "tray"; // hide to the system tray immediately
+pub const CLOSE_DEFAULT: &str = CLOSE_ASK;
+
+/// Read the configured close action, falling back to the default.
+pub fn close_behavior(store: &crate::app::store::Store) -> &'static str {
+  match store.shell_str("closeBehavior").as_deref() {
+    Some(CLOSE_DIRECT) => CLOSE_DIRECT,
+    Some(CLOSE_TRAY) => CLOSE_TRAY,
+    _ => CLOSE_ASK,
+  }
+}
+
 #[derive(Default)]
 pub struct Windows {
   pub states: Mutex<HashMap<String, WinMeta>>,
+  /// The system-tray icon, created lazily on the first 退到托盘 (desktop): a
+  /// hidden window must have somewhere to come back from, and — more
+  /// importantly — hiding (not closing) every window keeps the process alive
+  /// so the tray owns the app's continued presence in the background.
+  #[cfg(desktop)]
+  pub tray: Mutex<Option<tauri::tray::TrayIcon>>,
+  /// Label of the window most recently hidden to the tray — the tray 打开主窗口
+  /// restores that one (the first of the peers that asked the app to keep
+  /// running).
+  #[cfg(desktop)]
+  pub tray_target: Mutex<Option<String>>,
+  /// Set before programmatic app exit (tray 退出). CloseRequested must not
+  /// re-intercept a synthetic exit — that would deadlock the shutdown.
+  #[cfg(desktop)]
+  pub quitting: std::sync::atomic::AtomicBool,
 }
 
 pub struct WinMeta {
@@ -52,6 +83,15 @@ pub struct WinMeta {
   /// page — otherwise connecting in a new window re-skins every other
   /// window's titlebar.
   pub last_theme: Mutex<Option<HashMap<String, String>>>,
+  /// The close-confirm overlay child webview (`close.html`), created on
+  /// demand and re-created each show so it always sits above any node view
+  /// and starts with a fresh dialog state. Desktop only (unused on mobile,
+  /// kept unconditional like `settings_view` so the struct literal stays
+  /// uniform across targets).
+  pub close_view: Mutex<Option<Webview>>,
+  /// Set by the confirm dialog (window_close_confirm) right before the real
+  /// close, so the intercepted CloseRequested lets it through exactly once.
+  pub allow_close: std::sync::atomic::AtomicBool,
 }
 
 /// A connection in flight: the launcher shows a spinner overlay until the
@@ -175,6 +215,8 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
       last_bounds: Mutex::new(None),
       connecting: Mutex::new(None),
       last_theme: Mutex::new(None),
+      close_view: Mutex::new(None),
+      allow_close: std::sync::atomic::AtomicBool::new(false),
     },
   );
 
@@ -269,6 +311,233 @@ fn re_raise_settings(app: &AppHandle, win_label: &str) {
     let _ = old.close();
   }
   let _ = ensure_settings_view(app, win_label);
+}
+
+// ================= close-to-tray / confirm dialog (desktop) =================
+
+/// Intercept a close request (title-bar close button, Alt+F4, native traffic
+/// lights, `window.close()` from the shell pages). The configured action
+/// decides: direct close lets it through on state saved; tray hides the
+/// window; ask shows the confirm dialog (also via prevention).
+#[cfg(desktop)]
+pub fn on_close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
+  use std::sync::atomic::Ordering;
+  let app = window.app_handle();
+  let windows = app.state::<Windows>();
+
+  // Programmatic quit (tray 退出) must close windows without re-asking.
+  if windows.quitting.load(Ordering::SeqCst) {
+    save_window_state(window);
+    return;
+  }
+  // The dialog confirmed: allow exactly this one close.
+  let allowed = windows
+    .states
+    .lock()
+    .unwrap()
+    .get(window.label())
+    .map(|meta| meta.allow_close.swap(false, Ordering::SeqCst))
+    .unwrap_or(false);
+  if allowed {
+    save_window_state(window);
+    return;
+  }
+
+  let behavior = close_behavior(&app.state::<Store>());
+  match behavior {
+    CLOSE_DIRECT => save_window_state(window),
+    CLOSE_TRAY => {
+      api.prevent_close();
+      hide_to_tray(&app, window.label());
+    }
+    _ => {
+      // CLOSE_ASK
+      api.prevent_close();
+      show_close_dialog(&app, window.label());
+    }
+  }
+}
+
+/// Hide the window to the system tray, creating the tray icon on first use.
+/// The window stays alive (hidden, not destroyed) so the process survives —
+/// that is the whole point of 退到托盘: the app keeps running in the
+/// background and the tray is where it comes back from. If the tray cannot
+/// be created (no app icon, platform quirk) we must NOT strand the window
+/// hidden with no way back — fall back to a real close instead.
+#[cfg(desktop)]
+pub fn hide_to_tray(app: &AppHandle, win_label: &str) {
+  if ensure_tray(app).is_err() {
+    log::error!("[tray] tray unavailable — closing window {win_label} instead of hiding");
+    confirm_close_window(app, win_label);
+    return;
+  }
+  if let Some(window) = app.get_window(win_label) {
+    *app.state::<Windows>().tray_target.lock().unwrap() = Some(win_label.to_string());
+    let _ = window.hide();
+  }
+}
+
+/// Restore the window that hid to the tray (tray 打开主窗口). Falls back to
+/// the main window when the remembered one is gone.
+#[cfg(desktop)]
+pub fn resume_tray_target(app: &AppHandle) {
+  let target = app.state::<Windows>().tray_target.lock().unwrap().clone();
+  let label = target.as_deref().unwrap_or("main");
+  if let Some(window) = app.get_window(label) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+  } else if let Some(window) = app.get_window("main") {
+    let _ = window.show();
+    let _ = window.set_focus();
+  }
+}
+
+/// Create the system tray icon once (idempotent): tooltip, left-click shows
+/// the tray target, menu has 打开主窗口 / 退出. The icon rides the app's own
+/// window icon so it carries the brand rather than a default blob.
+#[cfg(desktop)]
+pub fn ensure_tray(app: &AppHandle) -> Result<(), String> {
+  use tauri::menu::{Menu, MenuItem};
+  use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+  let windows = app.state::<Windows>();
+  if windows.tray.lock().unwrap().is_some() {
+    return Ok(());
+  }
+  let icon = app.default_window_icon().cloned().ok_or("无窗口图标")?;
+
+  let open = MenuItem::with_id(app, "tray-open", "打开主窗口", true, None::<&str>)
+    .map_err(|e| e.to_string())?;
+  let quit = MenuItem::with_id(app, "tray-quit", "退出", true, None::<&str>)
+    .map_err(|e| e.to_string())?;
+  let menu = Menu::with_items(app, &[&open, &quit]).map_err(|e| e.to_string())?;
+
+  let tray = TrayIconBuilder::with_id("dsh-app-tray")
+    .icon(icon)
+    .tooltip("DeepSeek Harness")
+    .menu(&menu)
+    .show_menu_on_left_click(false)
+    .on_menu_event(|app, event| match event.id().as_ref() {
+      "tray-open" => resume_tray_target(app),
+      "tray-quit" => {
+        let windows = app.state::<Windows>();
+        windows.quitting.store(true, std::sync::atomic::Ordering::SeqCst);
+        // Closing the app stops the embedded local dsh (RunEvent::Exit).
+        app.exit(0);
+      }
+      _ => {}
+    })
+    .on_tray_icon_event(|tray, event| {
+      if let TrayIconEvent::Click {
+        button: MouseButton::Left,
+        button_state: MouseButtonState::Up,
+        ..
+      } = event
+      {
+        resume_tray_target(tray.app_handle());
+      }
+    })
+    .build(app)
+    .map_err(|e| e.to_string())?;
+
+  *windows.tray.lock().unwrap() = Some(tray);
+  log::info!("[tray] system tray is up (打开主窗口 / 退出)");
+  Ok(())
+}
+
+/// Show the close-confirm dialog (`close.html`) for a window. The overlay is
+/// re-created on every show: child-webview z-order follows creation order, so
+/// a fresh view always sits above any node/settings view, and the checkbox
+/// starts unchecked each time (nothing remembered by default).
+#[cfg(desktop)]
+pub fn show_close_dialog(app: &AppHandle, win_label: &str) {
+  use tauri::webview::PageLoadEvent;
+  // Drop the previous instance first (close outside the locks — it can
+  // round-trip to the main thread).
+  let old = {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    states
+      .get(win_label)
+      .and_then(|meta| meta.close_view.lock().unwrap().take())
+  };
+  if let Some(old) = old {
+    let _ = old.close();
+  }
+
+  let Some(window) = app.get_window(win_label) else { return };
+  let label = format!("{win_label}-close");
+  let builder = WebviewBuilder::new(label, WebviewUrl::App("close.html".into()))
+    .on_page_load(move |webview, payload| {
+      if payload.event() == PageLoadEvent::Finished {
+        let app = webview.app_handle();
+        // Seed the dialog with its window's theme (like the settings overlay).
+        let win_label = webview.window().label().to_string();
+        let tokens = {
+          let windows = app.state::<Windows>();
+          let states = windows.states.lock().unwrap();
+          states
+            .get(&win_label)
+            .and_then(|meta| meta.last_theme.lock().unwrap().clone())
+        };
+        if let Some(tokens) = tokens {
+          let _ = app.emit_to(&win_label, "theme:sync", tokens);
+        }
+      }
+    });
+  // Transparent overlay spanning the whole window (the mask dims the titlebar
+  // too, same as the settings dialog).
+  #[cfg(not(target_os = "macos"))]
+  let builder = builder.transparent(true);
+  let (width, height) = window_logical_size(app, win_label);
+  let view = match window.add_child(
+    builder,
+    LogicalPosition::new(0.0, 0.0),
+    LogicalSize::new(width, height),
+  ) {
+    Ok(view) => view,
+    Err(e) => {
+      log::error!("[close] dialog create failed: {e}");
+      return;
+    }
+  };
+  let _ = view.show();
+  let windows = app.state::<Windows>();
+  let states = windows.states.lock().unwrap();
+  if let Some(meta) = states.get(win_label) {
+    *meta.close_view.lock().unwrap() = Some(view);
+  }
+}
+
+/// Cancel the close dialog: hide it, remember nothing. The window stays put.
+#[cfg(desktop)]
+pub fn close_close_dialog(app: &AppHandle, win_label: &str) {
+  let view = {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    states
+      .get(win_label)
+      .and_then(|meta| meta.close_view.lock().unwrap().take())
+  };
+  if let Some(view) = view {
+    let _ = view.close();
+  }
+}
+
+/// The dialog's 确认关闭: arm the once-only close bypass and close the window.
+#[cfg(desktop)]
+pub fn confirm_close_window(app: &AppHandle, win_label: &str) {
+  {
+    let windows = app.state::<Windows>();
+    let states = windows.states.lock().unwrap();
+    if let Some(meta) = states.get(win_label) {
+      meta.allow_close.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+  }
+  if let Some(window) = app.get_window(win_label) {
+    let _ = window.close();
+  }
 }
 
 fn validate_bounds(app: &AppHandle, saved: Option<SavedBounds>) -> Option<SavedBounds> {

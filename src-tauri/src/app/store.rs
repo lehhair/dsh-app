@@ -145,6 +145,21 @@ impl Store {
     self.shell_get(key).and_then(|v| v.as_bool()).unwrap_or(false)
   }
 
+  pub fn shell_str(&self, key: &str) -> Option<String> {
+    self.shell_get(key).and_then(|v| v.as_str().map(str::to_string))
+  }
+
+  /// Drop a shell key entirely (the default kicks in). Used by 重置-style
+  /// actions so a half-set value can't linger with a stale meaning.
+  pub fn shell_remove(&self, key: &str) {
+    let mut doc = self.read_json("shell.json");
+    if let Some(map) = doc.as_object_mut() {
+      if map.remove(key).is_some() {
+        self.write_json("shell.json", &doc);
+      }
+    }
+  }
+
   // ---- window geometry (per slot) ----
 
   pub fn win_state(&self, slot: u32) -> Option<SavedBounds> {

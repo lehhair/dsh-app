@@ -51,6 +51,12 @@
     "allow-settings-set-auto-local",
     "allow-registry-get",
     "allow-registry-set",
-    "allow-theme-changed"
+    "allow-theme-changed",
+    "allow-settings-get-close-behavior",
+    "allow-settings-set-close-behavior",
+    "allow-settings-reset-close-behavior",
+    "allow-window-close-confirm",
+    "allow-window-close-to-tray",
+    "allow-window-close-cancel"
   ]
 }

@@ -79,6 +79,10 @@ const realBridge = {
     setRestore: (enabled) => invoke('settings_set_restore', { enabled }),
     getAutoLocal: () => invoke('settings_get_auto_local'),
     setAutoLocal: (enabled) => invoke('settings_set_auto_local', { enabled }),
+    // title-bar close behavior: "ask" | "close" | "tray"
+    getCloseBehavior: () => invoke('settings_get_close_behavior'),
+    setCloseBehavior: (behavior) => invoke('settings_set_close_behavior', { behavior }),
+    resetCloseBehavior: () => invoke('settings_reset_close_behavior'),
   },
   // emitted when the (cached) settings overlay becomes visible — re-read state
   onSettingsRefresh: (callback) => on('settings:refresh', callback),
@@ -116,6 +120,11 @@ const realBridge = {
       return win.onFocusChanged(({ payload }) => callback(payload))
     },
   },
+
+  // close-confirm dialog (called from close.html): 确认关闭 / 退到托盘 / 取消
+  windowCloseConfirm: () => invoke('window_close_confirm'),
+  windowCloseToTray: () => invoke('window_close_to_tray'),
+  windowCloseCancel: () => invoke('window_close_cancel'),
 }
 
 export const bridge = isTauri ? realBridge : mockBridge

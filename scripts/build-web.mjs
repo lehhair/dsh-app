@@ -1,5 +1,5 @@
-// Build the bundled frontend into web/dist: esbuild-bundle the two page
-// entry points (launcher/settings) and copy the static assets. Tauri serves
+// Build the bundled frontend into web/dist: esbuild-bundle the page entry
+// points (launcher/settings/close) and copy the static assets. Tauri serves
 // web/dist as frontendDist in both dev and build.
 
 import { build } from 'esbuild'
@@ -16,6 +16,7 @@ await build({
   entryPoints: {
     launcher: join(root, 'web', 'src', 'launcher.js'),
     settings: join(root, 'web', 'src', 'settings.js'),
+    close: join(root, 'web', 'src', 'close.js'),
   },
   bundle: true,
   format: 'iife',
@@ -25,7 +26,7 @@ await build({
   logLevel: 'info',
 })
 
-for (const file of ['index.html', 'settings.html', 'fish.svg']) {
+for (const file of ['index.html', 'settings.html', 'close.html', 'fish.svg']) {
   cpSync(join(root, 'web', file), join(out, file))
   console.log(`[build:web] copied ${file}`)
 }

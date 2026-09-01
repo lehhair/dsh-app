@@ -632,6 +632,82 @@ pub fn theme_changed(app: AppHandle, webview: Webview, tokens: HashMap<String, S
   Ok(())
 }
 
+// ---- close-button behavior + close-to-tray / confirm dialog ----
+
+/// Current close action: "ask" (default) | "close" | "tray".
+#[tauri::command]
+pub fn settings_get_close_behavior(app: AppHandle) -> String {
+  windows::close_behavior(&app.state::<Store>()).to_string()
+}
+
+#[tauri::command]
+pub fn settings_set_close_behavior(app: AppHandle, behavior: String) -> Result<serde_json::Value, String> {
+  match behavior.as_str() {
+    windows::CLOSE_ASK | windows::CLOSE_DIRECT | windows::CLOSE_TRAY => {}
+    _ => return Err("无效的关闭行为".into()),
+  }
+  app
+    .state::<Store>()
+    .shell_set("closeBehavior", serde_json::json!(behavior));
+  Ok(serde_json::json!({ "ok": true }))
+}
+
+/// Back to ask-every-time (delete the key so the default resolves).
+#[tauri::command]
+pub fn settings_reset_close_behavior(app: AppHandle) -> Result<serde_json::Value, String> {
+  app.state::<Store>().shell_remove("closeBehavior");
+  Ok(serde_json::json!({ "ok": true }))
+}
+
+/// 确认关闭 from the close dialog: arm the once-only bypass and close the
+/// window for real. The dialog persists the remembered action itself before
+/// invoking (via settings_set_close_behavior when 记住此操作 is checked).
+#[tauri::command]
+pub fn window_close_confirm(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  #[cfg(desktop)]
+  {
+    let win_label = app_origin_gate(&app, &webview)?;
+    windows::confirm_close_window(&app, &win_label);
+  }
+  #[cfg(not(desktop))]
+  {
+    let _ = (&app, &webview);
+  }
+  Ok(serde_json::json!({ "ok": true }))
+}
+
+/// 退到托盘 from the close dialog (or the direct tray behavior): hide the
+/// window; the tray keeps the app alive in the background.
+#[tauri::command]
+pub fn window_close_to_tray(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  #[cfg(desktop)]
+  {
+    let win_label = app_origin_gate(&app, &webview)?;
+    windows::hide_to_tray(&app, &win_label);
+  }
+  #[cfg(not(desktop))]
+  {
+    let _ = (&app, &webview);
+  }
+  Ok(serde_json::json!({ "ok": true }))
+}
+
+/// Dismiss the close dialog without acting (mask ✕ Esc) — nothing is
+/// remembered, the window stays put.
+#[tauri::command]
+pub fn window_close_cancel(app: AppHandle, webview: Webview) -> Result<serde_json::Value, String> {
+  #[cfg(desktop)]
+  {
+    let win_label = app_origin_gate(&app, &webview)?;
+    windows::close_close_dialog(&app, &win_label);
+  }
+  #[cfg(not(desktop))]
+  {
+    let _ = (&app, &webview);
+  }
+  Ok(serde_json::json!({ "ok": true }))
+}
+
 #[cfg(test)]
 mod tests {
   #[test]

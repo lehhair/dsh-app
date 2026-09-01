@@ -619,6 +619,57 @@
       .registry-foot .hint { flex: 1; min-width: 0; font-size: 12px; margin: 0; }
       .registry-panel .error { min-height: 0; margin: 0; }
 
+      /* close-behavior picker: same vertical radio-list idiom as the
+         registry panel — current action ringed, footer = hint + save/cancel */
+      .close-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 2px 0 10px;
+        padding: 12px;
+        border: 1px solid var(--shell-border);
+        border-radius: 12px;
+        background: var(--shell-layer);
+      }
+      .close-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 10px;
+        border: 1px solid var(--shell-border);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--shell-fg);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 0.12s ease, background-color 0.12s ease;
+      }
+      .close-option:hover { background: var(--shell-hover); }
+      .close-option.selected { border-color: var(--shell-brand); }
+      .close-option .radio {
+        position: relative;
+        flex: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 1px solid var(--shell-ghost-border);
+        transition: border-color 0.12s ease;
+      }
+      .close-option.selected .radio { border-color: var(--shell-brand); }
+      .close-option.selected .radio::after {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        border-radius: 50%;
+        background: var(--shell-brand);
+      }
+      .close-option .co-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+      .close-option .co-name { font-size: 13px; }
+      .close-option .co-url { font-size: 12px; color: var(--shell-fg-tertiary); }
+      .close-foot { display: flex; align-items: center; gap: 10px; }
+      .close-foot .hint { flex: 1; min-width: 0; font-size: 12px; margin: 0; }
+
       .hero .hero-version { font-size: 12px; color: var(--shell-fg-tertiary); margin: 0; }
 
       /* connecting overlay: covers the launcher while a node view loads
@@ -834,6 +885,48 @@
               <div class="behavior">
                 <span class="label">恢复上次连接</span>
                 <button id="restore-toggle" class="toggle" role="switch" aria-checked="false" title="下次启动自动打开上次连接的节点"></button>
+              </div>
+            </div>
+
+            <div class="group">
+              <div class="group-title">关闭行为</div>
+              <div class="behavior">
+                <span class="label">关闭按钮</span>
+                <span class="kv-value" id="close-behavior-label">…</span>
+                <span class="kv-actions">
+                  <button id="close-behavior-edit" class="btn sm ghost">修改</button>
+                  <button id="close-behavior-reset" class="btn sm ghost">重置</button>
+                </span>
+              </div>
+              <div class="close-panel" id="close-behavior-panel" hidden>
+                <button class="close-option" type="button" data-close-behavior="ask">
+                  <span class="radio"></span>
+                  <span class="co-text">
+                    <span class="co-name">每次询问</span>
+                    <span class="co-url">关闭时弹出确认框（默认）</span>
+                  </span>
+                </button>
+                <button class="close-option" type="button" data-close-behavior="close">
+                  <span class="radio"></span>
+                  <span class="co-text">
+                    <span class="co-name">直接关闭</span>
+                    <span class="co-url">不再询问，点击关闭立刻退出窗口</span>
+                  </span>
+                </button>
+                <button class="close-option" type="button" data-close-behavior="tray">
+                  <span class="radio"></span>
+                  <span class="co-text">
+                    <span class="co-name">退到托盘</span>
+                    <span class="co-url">点击关闭隐藏到系统托盘，后台继续运行</span>
+                  </span>
+                </button>
+                <div class="close-foot">
+                  <p class="hint">也可在关闭确认框中勾选"记住此操作"直接设置；重置会恢复为每次询问。</p>
+                  <span class="kv-actions">
+                    <button id="close-behavior-save" class="btn sm primary">保存</button>
+                    <button id="close-behavior-cancel" class="btn sm ghost">取消</button>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
