@@ -1,11 +1,17 @@
 package com.dshapp.app
 
+import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.WindowInsetsController
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -51,6 +57,54 @@ class MainActivity : TauriActivity() {
     lastNight = isNightMode()
     applyStatusBarIcons(lastNight == true)
     handler.postDelayed(pollStatusBar, 2000)
+  }
+
+  // wry creates the WebViewClient (and calls setWebView) before the Rust
+  // side sets the real client, so `onWebViewCreate` runs with webViewClient
+  // still null. Post to the main loop: by then Tauri's client is installed,
+  // and we wrap it to hand target="_blank" / window.open() links to the
+  // system browser instead of dropping them (a WebView has no tab bar).
+  override fun onWebViewCreate(webView: WebView) {
+    handler.post {
+      val original = webView.webViewClient
+      val activity = this
+      webView.webViewClient = object : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+          return original?.let { it.shouldOverrideUrlLoading(view, request) } != false
+        }
+
+        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+          original?.onPageStarted(view, url, favicon)
+        }
+
+        override fun onPageFinished(view: WebView, url: String?) {
+          original?.onPageFinished(view, url)
+        }
+
+        override fun onCreateWindow(
+          view: WebView,
+          isDialog: Boolean,
+          isUserGesture: Boolean,
+          resultMsg: android.os.Message
+        ): Boolean {
+          // target="_blank" / window.open(): hand the URL to the system browser.
+          if (isUserGesture) {
+            val url = resultMsg.data?.getString("url")
+            val webViewUrl = resultMsg.obj as? WebView
+            val href = url ?: webViewUrl?.url
+            if (href != null && href.startsWith("http")) {
+              try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(href)))
+                return true
+              } catch (e: Exception) {
+                // fall through to default (returns true but no new window)
+              }
+            }
+          }
+          return super.onCreateWindow(view, isDialog, isUserGesture, resultMsg)
+        }
+      }
+    }
   }
 
   override fun onDestroy() {

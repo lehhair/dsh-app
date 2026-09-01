@@ -855,8 +855,23 @@ fn view_for(app: &AppHandle, win_label: &str, id: &str, url: &str) -> Result<Web
   let window = app.get_window(win_label).ok_or("窗口不可用")?;
   let label = format!("{win_label}-view-{id}");
   let parsed = url::Url::parse(url).map_err(|e| e.to_string())?;
-  let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed))
+  let mut builder = WebviewBuilder::new(label, WebviewUrl::External(parsed))
     .initialization_script(inject::NODE_VIEW_SCRIPT);
+  // target="_blank" / window.open() in the dsh page asks to open a new
+  // window. A WebView has no tab bar — the honest thing is to hand the URL
+  // to the system browser and deny creating an in-app window. (Windows/Linux/
+  // macOS; Android handles this in onCreateWindow instead.)
+  #[cfg(desktop)]
+  {
+    let app_new = app.clone();
+    builder = builder.on_new_window(move |url, _features| {
+      if matches!(url.scheme(), "http" | "https") {
+        use tauri_plugin_opener::OpenerExt;
+        let _ = app_new.opener().open_url(url.to_string(), None::<&str>);
+      }
+      tauri::webview::NewWindowResponse::Deny
+    });
+  }
   // The first REAL page load completes any pending connection: the view
   // stays hidden until the dsh page has rendered, so the user watches the
   // launcher's spinner instead of a blank view. about:blank fires too (the

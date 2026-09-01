@@ -40,6 +40,7 @@ pub fn run() {
         ])
         .build(),
     )
+    .plugin(tauri_plugin_opener::init())
     .manage(Windows::default())
     .manage(DshService::default());
 
