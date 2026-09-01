@@ -371,6 +371,10 @@ pub fn hide_to_tray(app: &AppHandle, win_label: &str) {
     confirm_close_window(app, win_label);
     return;
   }
+  // Close the confirm dialog first: it is a child webview that outlives a
+  // window hide, so restoring the window would otherwise surface the stale
+  // dialog on top again.
+  close_close_dialog(app, win_label);
   if let Some(window) = app.get_window(win_label) {
     *app.state::<Windows>().tray_target.lock().unwrap() = Some(win_label.to_string());
     let _ = window.hide();
