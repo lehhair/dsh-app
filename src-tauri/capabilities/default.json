@@ -57,6 +57,7 @@
     "allow-settings-reset-close-behavior",
     "allow-window-close-confirm",
     "allow-window-close-to-tray",
-    "allow-window-close-cancel"
+    "allow-window-close-cancel",
+    "opener:default"
   ]
 }

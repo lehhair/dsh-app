@@ -11,6 +11,7 @@
     "allow-shell-back",
     "allow-theme-changed",
     "allow-status-bar-height",
-    "allow-status-bar-appearance"
+    "allow-status-bar-appearance",
+    "opener:default"
   ]
 }
