@@ -615,9 +615,20 @@ pub fn registry_set(app: AppHandle, webview: Webview, url: String) -> Result<ser
 // ---- live theme sync (from the connected dsh page) ----
 
 #[tauri::command]
-pub fn theme_changed(app: AppHandle, tokens: HashMap<String, String>) -> Result<(), String> {
-  *app.state::<windows::Windows>().last_theme.lock().unwrap() = Some(tokens.clone());
-  let _ = app.emit("theme:sync", tokens);
+pub fn theme_changed(app: AppHandle, webview: Webview, tokens: HashMap<String, String>) -> Result<(), String> {
+  // Per-window theme: the invoking webview (a node view, or the mobile main
+  // webview) belongs to one window — record the sample there and broadcast
+  // only to THAT window's webviews. A global store + app.emit would let a
+  // connection in a new window re-skin every other window's titlebar.
+  let win_label = windows::label_of(&webview);
+  {
+    let windows = app.state::<windows::Windows>();
+    let states = windows.states.lock().unwrap();
+    if let Some(meta) = states.get(&win_label) {
+      *meta.last_theme.lock().unwrap() = Some(tokens.clone());
+    }
+  }
+  let _ = app.emit_to(&win_label, "theme:sync", tokens);
   Ok(())
 }
 

@@ -27,7 +27,6 @@ pub const TITLEBAR_HEIGHT: f64 = 40.0;
 #[derive(Default)]
 pub struct Windows {
   pub states: Mutex<HashMap<String, WinMeta>>,
-  pub last_theme: Mutex<Option<HashMap<String, String>>>,
 }
 
 pub struct WinMeta {
@@ -47,6 +46,12 @@ pub struct WinMeta {
   /// launcher reads it on startup (restore may begin before the page's
   /// listeners attach) and the node view's on_page_load completes it.
   pub connecting: Mutex<Option<ConnectingInfo>>,
+  /// The theme tokens last sampled from THIS window's connected dsh page.
+  /// Per-window (not global): two peer windows can be on different gateways
+  /// with different themes, and the titlebar must follow its own window's
+  /// page — otherwise connecting in a new window re-skins every other
+  /// window's titlebar.
+  pub last_theme: Mutex<Option<HashMap<String, String>>>,
 }
 
 /// A connection in flight: the launcher shows a spinner overlay until the
@@ -169,6 +174,7 @@ pub fn create_app_window(app: &AppHandle) -> Result<(), String> {
       settings_below_node: std::sync::atomic::AtomicBool::new(false),
       last_bounds: Mutex::new(None),
       connecting: Mutex::new(None),
+      last_theme: Mutex::new(None),
     },
   );
 
@@ -204,9 +210,18 @@ fn ensure_settings_view(app: &AppHandle, win_label: &str) -> Result<(), String> 
     .on_page_load(move |webview, payload| {
       if payload.event() == tauri::webview::PageLoadEvent::Finished {
         let app = webview.app_handle();
-        let tokens = app.state::<Windows>().last_theme.lock().unwrap().clone();
+        // This overlay belongs to one window — seed it with THAT window's
+        // theme (per-window now), not the app-global last sample.
+        let win_label = webview.window().label().to_string();
+        let tokens = {
+          let windows = app.state::<Windows>();
+          let states = windows.states.lock().unwrap();
+          states
+            .get(&win_label)
+            .and_then(|m| m.last_theme.lock().unwrap().clone())
+        };
         if let Some(tokens) = tokens {
-          let _ = app.emit_to(webview.label(), "theme:sync", tokens);
+          let _ = app.emit_to(&win_label, "theme:sync", tokens);
         }
       }
     });
