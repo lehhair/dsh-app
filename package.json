@@ -12,7 +12,8 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:bundled": "npm run bundle:resources && npm run tauri -- build",
-    "build:external": "node scripts/bundle-resources.mjs --external && npm run tauri -- build"
+    "build:external": "node scripts/bundle-resources.mjs --external && npm run tauri -- build",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "npm": "^12.0.2"
