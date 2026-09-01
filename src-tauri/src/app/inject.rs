@@ -118,7 +118,11 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
         window.__TAURI_INTERNALS__.invoke('shell_back');
       } catch (_e) {}
     });
-    host.appendChild(btn);
+    // Insert BEFORE the action seat (which renders "打开配置文件") so the
+    // back button sits on the left of it — appending would place it after
+    // (right of) the seat. Works on desktop and mobile alike: the seat is a
+    // display:contents wrapper inside the header's flex actions row.
+    host.insertBefore(btn, seat);
     backButton = btn;
   }
 
