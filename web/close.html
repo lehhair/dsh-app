@@ -108,11 +108,16 @@
       .dialog-body .question { font-size: 14px; line-height: 22px; color: var(--shell-fg); }
       .dialog-body .hint { font-size: 12px; line-height: 18px; color: var(--shell-fg-tertiary); margin: 6px 0 0; }
 
-      /* remember checkbox — plain dsh-style switch */
+      /* remember checkbox — plain dsh-style switch. Optical alignment: the
+         text's line-height matches the switch's full height (19px) so both
+         boxes share one midline and flex centering lands the glyphs exactly
+         on the switch's visual center. CJK glyphs sit slightly low in their
+         em-box, so a 1px upward nudge compensates — without it the text reads
+         a hair below the switch. */
       .remember {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         margin: 16px 22px 0;
         cursor: pointer;
         user-select: none;
@@ -140,7 +145,12 @@
       }
       .remember .toggle.on { background: var(--shell-brand); border-color: var(--shell-brand); }
       .remember .toggle.on::after { transform: translateX(15px); background: var(--shell-bg); }
-      .remember .text { font-size: 13px; color: var(--shell-fg-secondary); }
+      .remember .text {
+        font-size: 13px;
+        line-height: 19px;
+        color: var(--shell-fg-secondary);
+        transform: translateY(-1px);
+      }
 
       .dialog-foot {
         display: flex;
