@@ -2,16 +2,22 @@ package com.dshapp.app
 
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.WindowInsetsController
-import android.webkit.WebResourceRequest
+import android.webkit.ConsoleMessage
+import android.webkit.CustomViewCallback
+import android.webkit.FileChooserParams
+import android.webkit.GeolocationPermissions
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -59,28 +65,17 @@ class MainActivity : TauriActivity() {
     handler.postDelayed(pollStatusBar, 2000)
   }
 
-  // wry creates the WebViewClient (and calls setWebView) before the Rust
-  // side sets the real client, so `onWebViewCreate` runs with webViewClient
-  // still null. Post to the main loop: by then Tauri's client is installed,
-  // and we wrap it to hand target="_blank" / window.open() links to the
-  // system browser instead of dropping them (a WebView has no tab bar).
+  // target="_blank" / window.open() must open the system browser, but wry's
+  // WebChromeClient never overrides onCreateWindow (so WebView drops the
+  // request). wry sets its clients after onWebViewCreate, so post to the
+  // main loop: by then the WebChromeClient is installed — wrap it in a single
+  // layer that adds onCreateWindow and delegates every other callback to the
+  // original (js dialogs, file chooser, permissions… all preserved).
   override fun onWebViewCreate(webView: WebView) {
     handler.post {
-      val original = webView.webViewClient
+      val inner = webView.webChromeClient
       val activity = this
-      webView.webViewClient = object : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-          return original?.let { it.shouldOverrideUrlLoading(view, request) } != false
-        }
-
-        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-          original?.onPageStarted(view, url, favicon)
-        }
-
-        override fun onPageFinished(view: WebView, url: String?) {
-          original?.onPageFinished(view, url)
-        }
-
+      webView.webChromeClient = object : WebChromeClient() {
         override fun onCreateWindow(
           view: WebView,
           isDialog: Boolean,
@@ -94,14 +89,40 @@ class MainActivity : TauriActivity() {
             val href = url ?: webViewUrl?.url
             if (href != null && href.startsWith("http")) {
               try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(href)))
+                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(href)))
                 return true
               } catch (e: Exception) {
-                // fall through to default (returns true but no new window)
+                // no browser to handle it — fall through to the delegate
               }
             }
           }
-          return super.onCreateWindow(view, isDialog, isUserGesture, resultMsg)
+          return inner?.onCreateWindow(view, isDialog, isUserGesture, resultMsg) ?: false
+        }
+
+        override fun onShowCustomView(view: View, callback: android.webkit.CustomViewCallback) {
+          inner?.onShowCustomView(view, callback) ?: super.onShowCustomView(view, callback)
+        }
+        override fun onHideCustomView() {
+          inner?.onHideCustomView() ?: super.onHideCustomView()
+        }
+        override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean =
+          inner?.onJsAlert(view, url, message, result) ?: super.onJsAlert(view, url, message, result)
+        override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean =
+          inner?.onJsConfirm(view, url, message, result) ?: super.onJsConfirm(view, url, message, result)
+        override fun onJsPrompt(view: WebView, url: String, message: String, defaultValue: String, result: JsPromptResult): Boolean =
+          inner?.onJsPrompt(view, url, message, defaultValue, result) ?: super.onJsPrompt(view, url, message, defaultValue, result)
+        override fun onPermissionRequest(request: PermissionRequest) {
+          inner?.onPermissionRequest(request) ?: super.onPermissionRequest(request)
+        }
+        override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
+          inner?.onGeolocationPermissionsShowPrompt(origin, callback) ?: super.onGeolocationPermissionsShowPrompt(origin, callback)
+        }
+        override fun onShowFileChooser(webView: WebView, filePathCallback: ValueCallback<Array<Uri?>?>, fileChooserParams: FileChooserParams): Boolean =
+          inner?.onShowFileChooser(webView, filePathCallback, fileChooserParams) ?: super.onShowFileChooser(webView, filePathCallback, fileChooserParams)
+        override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean =
+          inner?.onConsoleMessage(consoleMessage) ?: super.onConsoleMessage(consoleMessage)
+        override fun onReceivedTitle(view: WebView, title: String) {
+          inner?.onReceivedTitle(view, title) ?: super.onReceivedTitle(view, title)
         }
       }
     }
