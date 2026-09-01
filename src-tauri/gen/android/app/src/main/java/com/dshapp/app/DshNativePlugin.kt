@@ -67,15 +67,29 @@ class DshNativePlugin(private val activity: Activity) : Plugin(activity) {
    * Status-bar icon appearance driven by the page's ACTUAL theme (the dsh page
    * can be dark while the system is light, and vice versa — the uiMode poll in
    * MainActivity only follows the system). `dark` = page wants light icons.
+   *
+   * MUST run on the UI thread: WindowInsetsController.setSystemBarsAppearance
+   * touches the window's insets and silently does nothing off the main
+   * thread. The plugin invoke arrives on a JNI/worker thread, so hop onto the
+   * main looper (setCookie happens to work off-thread only because
+   * CookieManager dispatches internally itself).
    */
   @Command
   fun setStatusBarAppearance(invoke: Invoke) {
     val args = invoke.parseArgs(SetStatusBarAppearanceArgs::class.java)
-    val controller = activity.window.insetsController
-    controller?.setSystemBarsAppearance(
-      if (args.dark) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-      WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-    )
-    invoke.resolve()
+    val dark = args.dark
+    runOnUiThread {
+      val controller = activity.window.insetsController
+      controller?.setSystemBarsAppearance(
+        if (dark) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+      )
+      invoke.resolve()
+    }
+  }
+
+  private fun runOnUiThread(block: () -> Unit) {
+    val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    handler.post { block() }
   }
 }

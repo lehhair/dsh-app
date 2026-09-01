@@ -169,13 +169,36 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
   // dark while the system is light): sample the bg-base token luminance and
   // tell the native side which icon color to use.
   let lastStatusBarDark = null;
+  // Tolerate every color form the token chain can render as: rgb()/rgba()
+  // with any spacing, or #hex (3/4/6/8 digits). A null means the token is
+  // not yet resolvable (var() chain still settling) — the 2s publish poll
+  // re-samples and corrects as soon as it resolves.
+  function parseLuminance(color) {
+    if (!color) return null;
+    let m = color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+    if (m) return 0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3];
+    m = color.match(/#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})\b/i);
+    if (m) {
+      let hex = m[1];
+      if (hex.length === 3 || hex.length === 4) hex = hex.split('').map((c) => c + c).join('');
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+    return null;
+  }
   function syncStatusBarIcons() {
     if (!/Android/i.test(navigator.userAgent)) return;
     const bg = getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim();
-    const m = bg.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
-    if (!m) return;
-    const luminance = 0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3];
-    const dark = luminance < 128;
+    let lum = parseLuminance(bg);
+    if (lum === null) {
+      // Unresolvable (late var() substitution / unusual format) — fall back
+      // to the system preference so the icons stay legible meanwhile; the
+      // publish poll corrects once the token resolves.
+      lum = window.matchMedia('(prefers-color-scheme: dark)').matches ? 0 : 255;
+    }
+    const dark = lum < 128;
     if (dark !== lastStatusBarDark) {
       lastStatusBarDark = dark;
       try {
@@ -185,6 +208,13 @@ pub const NODE_VIEW_SCRIPT: &str = r#"
   }
 
   function init() {
+    // onPageStarted injects before the DOM exists; publish() reads
+    // document.body, so a null body would throw and kill the whole init
+    // (polling + observers never start). Wait for the DOM instead.
+    if (!document.body) {
+      document.addEventListener('DOMContentLoaded', init, { once: true });
+      return;
+    }
     applySafeArea();
     const observer = new MutationObserver(publish);
     for (const target of [document.documentElement, document.body]) {
