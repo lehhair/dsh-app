@@ -1,1 +1,1 @@
-{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"latest"}}
+{"name":"dsh-runtime","private":true,"dependencies":{"@deepseek-ai/dsh":"^0.1.2-rc.1"}}
