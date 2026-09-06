@@ -119,7 +119,9 @@ localEnter.addEventListener('click', async () => {
   const s = await bridge.status()
   if (s.running) {
     try {
-      await bridge.connect(s.url)
+      // Prefer the tokenized URL (dsh web auth) over the bare root.
+      const url = s.authUrl || s.url
+      await bridge.connect(url)
       await bridge.settings.close()
     } catch (e) {
       dlgError.textContent = e || '连接失败'

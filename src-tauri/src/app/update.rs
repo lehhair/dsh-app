@@ -275,7 +275,8 @@ pub async fn update_dsh(app: &AppHandle, target: &str) -> Result<UpdateResult, S
   notify(&format!("安装完成：v{}", installed.as_deref().unwrap_or(target)));
   if was_running {
     if let Ok(info) = service::start_local(app, &service).await {
-      if let Some(url) = info.url {
+      // Prefer the tokenized URL (dsh web auth) when the new dsh has it.
+      if let Some(url) = info.auth_url.or(info.url) {
         windows::reconnect_local_windows(app, &url).await;
       }
     }

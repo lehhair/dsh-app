@@ -43,7 +43,7 @@ const settingsBtn = document.getElementById('settings')
 const reloadBtn = document.getElementById('reload')
 const titleStatus = document.getElementById('title-status')
 
-let current = null // { port, url }
+let current = null // { port, url, authUrl }
 // External flavor: the dsh runtime is the user's own global install — the
 // shell cannot update it, so the in-app dsh updater is hidden.
 let external = false
@@ -80,8 +80,8 @@ function setBadge(state, text) {
 }
 
 // status: 'idle' | 'starting' | 'running' | 'error'
-function setState(status, port, url) {
-  current = status === 'running' ? { port, url } : null
+function setState(status, port, url, authUrl) {
+  current = status === 'running' ? { port, url, authUrl: authUrl ?? null } : null
   if (status === 'running') setBadge('done', '运行中')
   else if (status === 'starting') setBadge('ongoing', '启动中')
   else if (status === 'error') setBadge('error', '启动失败')
@@ -100,7 +100,7 @@ let lastStatus = null // previous poll, for transition detection
 async function refresh() {
   const s = await bridge.status()
   const status = s.starting ? 'starting' : s.running ? 'running' : 'idle'
-  setState(status, s.port, s.url)
+  setState(status, s.port, s.url, s.authUrl)
   // The log ring is up to 5000 lines joined in Rust — refetching it every
   // poll tick wastes IPC for nothing. Pull it while boot output is
   // streaming in, and once on each state transition (final output).
@@ -142,7 +142,7 @@ startBtn.addEventListener('click', async () => {
     return
   }
   if (result.ok) {
-    setState('running', result.port, result.url)
+    setState('running', result.port, result.url, result.authUrl)
     log.hidden = false
     log.textContent = (await bridge.logs()).join('\n').slice(-4000)
   } else {
@@ -160,7 +160,11 @@ stopBtn.addEventListener('click', async () => {
 openBtn.addEventListener('click', async () => {
   if (!current) return
   showConnecting('本机实例')
-  await bridge.connect(current.url)
+  // Connect through the tokenized startup URL when dsh's web auth is active:
+  // the token exchange mints the session cookie and redirects to the clean
+  // root page. Older dsh (no auth) has no authUrl — the bare URL still works.
+  const url = current.authUrl || current.url
+  await bridge.connect(url)
 })
 
 // title-bar refresh reloads the currently shown dsh page

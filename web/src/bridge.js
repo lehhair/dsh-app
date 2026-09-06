@@ -24,6 +24,8 @@ const realBridge = {
   startLocal: () => invoke('local_start'),
   stopLocal: () => invoke('local_stop'),
   status: () => invoke('local_status'),
+  // the tokenized startup URL (dsh web auth) — connect entry for the local node
+  authUrl: () => invoke('local_auth_url'),
   logs: () => invoke('local_logs').then((text) => (text ? text.split('\n') : [])),
 
   // embedded dsh self-update / on-demand install

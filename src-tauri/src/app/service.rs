@@ -2,13 +2,20 @@
 //! `@deepseek-ai/dsh`'s `bin.js` (never Electron's patched Node kernel — dsh
 //! needs Node's internal `getOrInitializeCascadedLoader`), wait for health,
 //! keep a bounded log ring, and watch for exits.
+//!
+//! Since dsh 0.1.1 the web profile authenticates browsers: the root URL only
+//! serves with a valid browser-session cookie, minted by visiting the
+//! tokenized startup URL dsh prints once ready (`dsh web: …?token=…` — also
+//! the documented readiness signal). The health probe therefore accepts both
+//! the legacy 200 and the new 401/303 as "server is up", and the launcher
+//! connects through the captured tokenized URL so the webview exchanges the
+//! token for the cookie and lands on the clean root page.
 
 use crate::app::paths::Paths;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use std::time::{Duration, Instant};use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncBufReadExt;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::{oneshot, Mutex as TokioMutex};
@@ -33,6 +40,9 @@ pub struct Running {
   pub pid: u32,
   pub port: u16,
   pub url: String,
+  /// The tokenized startup URL captured from dsh's `dsh web:` line (new auth
+  /// flow), or `None` for older dsh versions without browser authentication.
+  pub auth_url: Option<String>,
   pub ready: bool,
   pub exited: oneshot::Receiver<Option<i32>>,
 }
@@ -44,6 +54,9 @@ pub struct LocalInfo {
   pub starting: bool,
   pub port: Option<u16>,
   pub url: Option<String>,
+  /// The authenticated startup URL (`…/?token=…`) when dsh's web auth is
+  /// active — the frontend must connect through THIS url, not the bare one.
+  pub auth_url: Option<String>,
 }
 
 pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalInfo, String> {
@@ -54,15 +67,18 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
 
   let existing = {
     let running = service.running.lock().unwrap();
-    running.as_ref().map(|r| (r.ready, r.port, r.url.clone()))
+    running
+      .as_ref()
+      .map(|r| (r.ready, r.port, r.url.clone(), r.auth_url.clone()))
   };
-  if let Some((ready, port, url)) = existing {
+  if let Some((ready, port, url, auth_url)) = existing {
     if ready && is_healthy(&url).await {
       return Ok(LocalInfo {
         running: true,
         starting: false,
         port: Some(port),
         url: Some(url),
+        auth_url,
       });
     }
     // Stale (died or never became healthy) — restart below.
@@ -116,11 +132,14 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
   let pid = child.id().unwrap_or(0);
 
   let logs = service.logs.clone();
+  // dsh's readiness line (`dsh web: http://127.0.0.1:PORT/?token=…`) doubles
+  // as the authenticated startup URL — scrape it from stdout as it streams.
+  let auth_url: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
   if let Some(stdout) = child.stdout.take() {
-    tokio::spawn(read_lines(stdout, logs));
+    tokio::spawn(read_lines(stdout, logs, Some(auth_url.clone())));
   }
   if let Some(stderr) = child.stderr.take() {
-    tokio::spawn(read_lines(stderr, service.logs.clone()));
+    tokio::spawn(read_lines(stderr, service.logs.clone(), None));
   }
 
   let (exit_tx, exit_rx) = oneshot::channel();
@@ -142,11 +161,15 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
     pid,
     port,
     url: url.clone(),
+    auth_url: None,
     ready: false,
     exited: exit_rx,
   });
 
-  // Health loop: GET the root until 200, up to HEALTH_TIMEOUT.
+  // Health loop: the server is up when the root answers — 200 on dsh without
+  // browser auth, 401 on the newer authenticated web (it only answers once
+  // Connection authentication is mounted, same readiness either way). Up to
+  // HEALTH_TIMEOUT.
   let deadline = Instant::now() + HEALTH_TIMEOUT;
   loop {
     if is_healthy(&url).await {
@@ -171,8 +194,11 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
     tokio::time::sleep(Duration::from_millis(500)).await;
   }
 
-  // Settle: give the server a beat past first-200, then confirm it is alive.
+  // Settle: give the server a beat past first-answer (the tokenized URL line
+  // may still be in flight on stdout), then confirm it is alive and capture
+  // the authenticated URL.
   tokio::time::sleep(Duration::from_millis(1000)).await;
+  let captured_auth_url = auth_url.lock().unwrap().clone();
   {
     let mut running = service.running.lock().unwrap();
     match running.as_mut() {
@@ -182,6 +208,9 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
           return Err(format!("dsh 启动时退出：\n{}", tail_logs(service)));
         }
         r.ready = true;
+        if captured_auth_url.is_some() {
+          r.auth_url = captured_auth_url.clone();
+        }
       }
       None => return Err("dsh 启动失败".into()),
     }
@@ -192,6 +221,7 @@ pub async fn start_local(app: &AppHandle, service: &DshService) -> Result<LocalI
     starting: false,
     port: Some(port),
     url: Some(url),
+    auth_url: captured_auth_url,
   })
 }
 
@@ -228,18 +258,21 @@ pub fn local_info(service: &DshService) -> LocalInfo {
       starting: false,
       port: Some(r.port),
       url: Some(r.url.clone()),
+      auth_url: r.auth_url.clone(),
     },
     Some(r) => LocalInfo {
       running: false,
       starting: true,
       port: Some(r.port),
       url: Some(r.url.clone()),
+      auth_url: r.auth_url.clone(),
     },
     None => LocalInfo {
       running: false,
       starting: false,
       port: None,
       url: None,
+      auth_url: None,
     },
   }
 }
@@ -258,17 +291,38 @@ fn tail_logs(service: &DshService) -> String {
   }
 }
 
-async fn read_lines<R>(reader: R, logs: std::sync::Arc<Mutex<VecDeque<String>>>)
+async fn read_lines<R>(
+  reader: R,
+  logs: std::sync::Arc<Mutex<VecDeque<String>>>,
+  auth_url: Option<Arc<Mutex<Option<String>>>>,
+)
 where
   R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
   let mut lines = tokio::io::BufReader::new(reader).lines();
   while let Ok(Some(line)) = lines.next_line().await {
+    if let Some(sink) = &auth_url {
+      if let Some(found) = scrape_auth_url(&line) {
+        *sink.lock().unwrap() = Some(found);
+      }
+    }
     let mut ring = logs.lock().unwrap();
     if ring.len() >= LOG_CAP {
       ring.pop_front();
     }
     ring.push_back(line);
+  }
+}
+
+/// Extract the tokenized startup URL from dsh's readiness line
+/// (`dsh web: http://127.0.0.1:PORT/?token=…`). Returns `None` for any other
+/// line, so pre-auth dsh versions simply never set it.
+fn scrape_auth_url(line: &str) -> Option<String> {
+  let rest = line.strip_prefix("dsh web: ")?.trim();
+  if rest.starts_with("http://") || rest.starts_with("https://") {
+    Some(rest.to_string())
+  } else {
+    None
   }
 }
 
@@ -293,7 +347,42 @@ fn health_client() -> &'static reqwest::Client {
 }
 
 async fn is_healthy(url: &str) -> bool {
-  matches!(health_client().get(url).send().await, Ok(response) if response.status() == reqwest::StatusCode::OK)
+  matches!(health_client().get(url).send().await, Ok(response) if response.status() != reqwest::StatusCode::SERVICE_UNAVAILABLE)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::scrape_auth_url;
+
+  #[test]
+  fn auth_url_is_scraped_from_the_ready_line() {
+    assert_eq!(
+      scrape_auth_url("dsh web: http://127.0.0.1:18742/?token=abc_-123"),
+      Some("http://127.0.0.1:18742/?token=abc_-123".into())
+    );
+    assert_eq!(
+      scrape_auth_url("dsh web: https://dsh.example.com/?token=x"),
+      Some("https://dsh.example.com/?token=x".into())
+    );
+    // Trailing whitespace and CR (Windows line endings) are trimmed.
+    assert_eq!(
+      scrape_auth_url("dsh web: http://127.0.0.1:80/?token=t \r"),
+      Some("http://127.0.0.1:80/?token=t".into())
+    );
+  }
+
+  #[test]
+  fn non_ready_lines_yield_no_auth_url() {
+    // A bare ready URL (pre-auth dsh) is still a valid connect entry — the
+    // auth layer simply falls back to the plain root.
+    assert_eq!(
+      scrape_auth_url("dsh web: http://127.0.0.1:18742/"),
+      Some("http://127.0.0.1:18742/".into())
+    );
+    // Any other log line is never a URL.
+    assert_eq!(scrape_auth_url("[dsh] booting…"), None);
+    assert_eq!(scrape_auth_url(""), None);
+  }
 }
 
 fn pick_free_port() -> std::io::Result<u16> {

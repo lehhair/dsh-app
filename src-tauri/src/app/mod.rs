@@ -84,6 +84,7 @@ pub fn run() {
       commands::local_start,
       commands::local_stop,
       commands::local_status,
+      commands::local_auth_url,
       commands::local_logs,
       commands::dsh_version,
       commands::dsh_diagnose,
@@ -358,7 +359,11 @@ async fn enter_local(app: &tauri::AppHandle, win_label: &str) {
   let service = app.state::<DshService>();
   match service::start_local(app, &service).await {
     Ok(info) => {
-      if let Some(url) = info.url {
+      // Prefer the tokenized startup URL: dsh's web auth mints the session
+      // cookie on first visit and redirects to the clean root. Older dsh
+      // without auth has no authUrl — the bare URL still works.
+      let url = info.auth_url.or(info.url);
+      if let Some(url) = url {
         let _ = windows::connect_into_window(app, win_label, "local", &url, "DeepSeek Harness", None).await;
       } else {
         windows::fail_connecting(app, win_label, "本机实例未就绪");

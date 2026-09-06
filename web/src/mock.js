@@ -76,7 +76,7 @@ export const mockBridge = {
     await delay(900)
     state.starting = false
     state.running = true
-    return { ok: true, running: true, starting: false, port: state.port, url: localUrl() }
+    return { ok: true, running: true, starting: false, port: state.port, url: localUrl(), authUrl: localUrl() + '?token=mock' }
   },
   stopLocal: async () => {
     state.running = false
@@ -88,7 +88,9 @@ export const mockBridge = {
       starting: state.starting,
       port: state.running ? state.port : null,
       url: state.running ? localUrl() : null,
+      authUrl: state.running ? localUrl() + '?token=mock' : null,
     }),
+  authUrl: () => j(state.running ? localUrl() + '?token=mock' : null),
   logs: () => j(state.logs.join('\n')),
 
   dshVersion: () => j(state.version),

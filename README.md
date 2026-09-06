@@ -26,6 +26,13 @@ npm run build:external
 
 - 内置版运行时定位：`resources/.dsh-runtime` → `DSH_RUNTIME` 环境变量 → 全局 npm
   （`npm root -g` 下的 `@deepseek-ai/dsh`）→ `node` on PATH。
+- **dsh web 认证适配（dsh ≥ 0.1.1）**：dsh web 启动后打印带 `?token=` 的
+  就绪 URL（`dsh web: http://…/?token=…`），浏览器须先访问该 URL 换取
+  `dsh-auth-*` 签名 Cookie（303 → 干净 `/`），此后 `/api` 与 WebSocket 均凭
+  Cookie 认证，裸根路径返回 401。壳的健康检查将 401 视为"服务已就绪"（旧版
+  200 同样接受），并从 stdout 抓取该 token URL 作为本机实例的连接入口
+  （`local_start` / `local_status` 返回 `authUrl`，启动器、设置页、恢复启动、
+  dsh 更新重启均优先走它）；老版 dsh 无认证时自动回落裸地址。
 - 外部版（`app_info.bundled === false`）：隐藏应用内 dsh 更新按钮（dsh 由用户自己的
   npm 管理，全局安装：`npm i -g @deepseek-ai/dsh`）；node 用 PATH 上的。
 - **启动器自更新（GitHub Releases）**：启动页检测到更高版本的 release（tag
@@ -97,6 +104,8 @@ bundled 版自带官方 node，external 版用系统 node）。
 ## 已验证（历史 Electron 记录）
 
 - 壳 spawn 官方 node + npm 版 dsh：HTTP 200、`__DSH_BOOT__` 注入、`/api/events.mux` WS 握手通过
+- dsh 0.1.2-rc.1 冒烟：`dsh web:` 就绪行抓取 → token 换 Cookie（303 + Set-Cookie）→
+  带 Cookie 根路径 200 + `__DSH_BOOT__` → `/api` 认证围栏生效（无 Cookie 401）
 - 关窗/退出：`taskkill /T /F` 杀进程树，无端口/进程泄漏
 
 ## 已知限制与下一版
@@ -105,5 +114,8 @@ bundled 版自带官方 node，external 版用系统 node）。
   `Set-Cookie`）→ 写入 view session（HttpOnly + SameSite=Strict + 7 天）→ 直接加载网关
   URL。fetch 与 WebSocket 都自动携带 cookie；origin 稳定，Chromium 磁盘缓存自然生效。
   同 host 多端口网关的 cookie 会互相覆盖——每次连接都重新预登录刷新（一次 ~ms POST）。
+- 远程节点若运行 dsh ≥ 0.1.1 的 web 认证版，`/_gateway/login` 预登录不再适用
+  （token URL 由对方打印）——连接这类节点需对方提供带 token 的启动 URL 或关闭
+  web 认证，暂未适配。
 - 内嵌实例默认 disable remote-gateway（overlay）：本机使用不需要再包一层网关；
   远程访问走独立网关实例（8443）

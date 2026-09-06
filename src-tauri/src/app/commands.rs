@@ -91,6 +91,7 @@ pub async fn local_start(app: AppHandle, state: State<'_, DshService>) -> Result
     "starting": info.starting,
     "port": info.port,
     "url": info.url,
+    "authUrl": info.auth_url,
   }))
 }
 
@@ -103,6 +104,20 @@ pub fn local_stop(state: State<'_, DshService>) -> Result<serde_json::Value, Str
 #[tauri::command]
 pub fn local_status(state: State<'_, DshService>) -> service::LocalInfo {
   service::local_info(&state)
+}
+
+/// The authenticated startup URL for the running local instance, if any —
+/// `…/?token=…` on dsh versions with web auth. The frontend connects through
+/// this URL so the webview exchanges the token for the session cookie.
+#[tauri::command]
+pub fn local_auth_url(state: State<'_, DshService>) -> Option<String> {
+  state
+    .inner()
+    .running
+    .lock()
+    .unwrap()
+    .as_ref()
+    .and_then(|r| r.auth_url.clone())
 }
 
 #[tauri::command]
